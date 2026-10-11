@@ -1,0 +1,25 @@
+Board2TeX 环境验证报告
+时间: 2026-09-07 19:29:40    耗时: 270s
+----------------------------------------------------------------
+OK    | Python 版本 | 3.14.6
+WARN  | Python 兼容性 | 3.14 对 paddlepaddle 可能无轮子, 将尝试用 uv 提供 Python 3.12
+SKIP  | 虚拟环境 | 复用已存在的 C:\Users\ASUS\AppData\Local\Board2TeX\.venv_b2t
+OK    | 依赖安装(uv)
+OK    | cv2 健康检查 | cv2 4.14.0 (contrib 4.x)
+OK    | import numpy | 2.5.3
+OK    | import cv2 | 4.14.0
+OK    | import PIL | 12.3.0
+OK    | import matplotlib | 3.11.1
+OK    | import PyQt5 | ?
+OK    | import torch | 2.14.0+cpu
+OK    | import paddle | 3.3.1
+OK    | import paddleocr | 3.4.1
+OK    | import pix2tex.cli | ?
+OK    | 生成测试图片
+OK    | PaddleOCR 识别中文 | ['板书识别测试:设函数 f(x)可导']
+OK    | LaTeX-OCR 识别公式 | \int_{0}^{1}X^{2}\,d X={\frac{1}{3}}
+----------------------------------------------------------------
+汇总: OK=15  FAIL=0  SKIP=1  WARN=1
+虚拟环境: C:\Users\ASUS\AppData\Local\Board2TeX\.venv_b2t
+激活(PowerShell): .\.venv_b2t\Scripts\Activate.ps1
+直接使用: & .\.venv_b2t\Scripts\python.exe 你的脚本.py

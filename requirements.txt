@@ -1,0 +1,10 @@
+numpy
+pillow
+matplotlib
+opencv-contrib-python<5
+PyQt5>=5.15
+paddlepaddle>=3.0,<4
+paddleocr>=3.0,<4
+transformers<5
+pix2tex
+pytest
