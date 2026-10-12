@@ -15,15 +15,13 @@ Hello everyone. I'm Guo Jiaxin from Group __. Our project is called Board2TeX. I
 
 ---
 
-## Slide 2 · Problem and Goal (45 sec) · Guo Jiaxin
+## Slide 2 · Problem and Goal (35 sec) · Guo Jiaxin
 
 Let me start with why we are doing this.
 
 Taking photos of the board with a phone is easy, but when we review, we have to type every formula into LaTeX by hand — slow, and easy to get wrong. Existing tools like Mathpix charge per use, and they only recognize a screenshot of a **single formula**. They cannot handle a full board, and they do not support English text mixed with formulas.
 
 So we want to build a **free** tool that works on a whole board. Our target users are students who want to archive board notes, and teaching assistants and instructors who need to turn derivations into handouts.
-
-What sets our project apart is the complete end-to-end flow — from a full board all the way to a compilable document — with **English text mixed with formulas**, and an **error notebook** for archiving. Existing tools offer none of these.
 
 (Handover) Next, Hu Bingshan will walk you through the system design.
 
