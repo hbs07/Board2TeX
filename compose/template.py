@@ -8,9 +8,7 @@
     装了的话可顺手编译验证模板本身没有语法问题:
         xelatex -interaction=nonstopmode -output-directory data/compose_check data/compose_check/empty.tex
 
-AI 辅助范围(课程要求):
-    本文件为 AI 生成、内容与《分工_C_识别与合成.md》§7.1 一致,
-    属 A 发放的固定资产;C 只读不写。
+AI 辅助说明: 见 README「诚信声明」。
 
 说明:
     MVP 边界 = 英文+公式混排,所以用 article 即可(pdflatex/xelatex 均可编译)。

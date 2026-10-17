@@ -7,9 +7,7 @@
     data/layout_check/annotated.png 里每个句子被绿/红框单独框住,
     框的数量 = 板书行数,从上到下编号 0,1,2,...
 
-AI 辅助范围(课程要求):
-    本骨架由 AI 依据《Board2TeX_分工_B_版面分析.md》§4 生成函数签名、
-    类型注解与文档字符串;函数体均为占位实现,由 B 独立实现并替换。
+AI 辅助说明: 见 README「诚信声明」。
 
 数据流(接口已冻结,只填函数体,不改签名):
     enhance 的二值图 -> ensure_foreground_white -> split_lines

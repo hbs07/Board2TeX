@@ -7,9 +7,7 @@
     data/compose_check/builder_test.tex 生成;本机装有 xelatex 时会自动
     编译出 builder_test.pdf。骨架阶段 tex 正文为空属预期。
 
-AI 辅助范围(课程要求):
-    本骨架由 AI 依据《分工_C_识别与合成.md》§7 生成函数签名、类型注解、
-    文档字符串与自测脚本;函数体为占位实现,由 C 独立实现并替换。
+AI 辅助说明: 见 README「诚信声明」。
 
 谁在调用这两个函数(改签名前先看这里):
     - main.py 的 pipeline():      compose_document(regions)

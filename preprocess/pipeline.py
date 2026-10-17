@@ -9,9 +9,7 @@
     B 填完 enhance 后,binary.png 应为"整页裁剪过的二值图";
     骨架阶段 enhance 是占位实现,binary 与原图相同,属预期。
 
-AI 辅助范围(课程要求):
-    本文件由 AI 依据项目指南 §4.1 的参考实现生成,经 A 审查验证;
-    后续修改由 A 负责。
+AI 辅助说明: 见 README「诚信声明」。
 
 冻结接口(Week 6 起不改,下游 layout/compose 依赖):
     load_image(path) -> np.ndarray        # BGR, 长边 <= MAX_SIDE(1600)

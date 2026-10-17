@@ -7,10 +7,7 @@
     data/enhance_check/ 下生成 gray.png / norm.png / binary.png / crop.png
     其中 crop.png 四边贴合内容,没有大片空白边;肉眼核对即可。
 
-AI 辅助范围(课程要求):
-    本骨架由 AI 依据《Board2TeX_分工_B_版面分析.md》§3 生成文件结构、
-    函数签名、类型注解、文档字符串与验证脚本;四个函数体均为占位实现,
-    由 B 独立实现并替换。A 只在评审 PR 时检查接口与边界情况。
+AI 辅助说明: 见 README「诚信声明」。
 
 数据流(接口已冻结,只填函数体,不改签名):
     load_image(A) -> to_gray -> normalize -> binarize -> crop_content

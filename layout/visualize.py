@@ -6,10 +6,7 @@
 期望结果: data/layout_check/annotated.png 生成,绿框=text,红框=formula,
           框左上角标 "序号:类型"。
 
-AI 辅助范围(课程要求):
-    本骨架由 AI 依据《Board2TeX_分工_B_版面分析.md》§6 生成函数签名、
-    类型注解与文档字符串;函数体为占位实现,由 B 独立实现并替换。
-    本函数是给报告和联调看的"眼睛",不参与识别,写错不影响主流程。
+AI 辅助说明: 见 README「诚信声明」。
 """
 
 from __future__ import annotations

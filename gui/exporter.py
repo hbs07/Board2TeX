@@ -5,9 +5,7 @@
     python -c "from gui.exporter import has_xelatex; print(has_xelatex())"
     期望: True(装了 TeX Live/MiKTeX 的机器)。
 
-AI 辅助范围(课程要求):
-    has_xelatex / compile_pdf 由 AI 依据项目指南 §4.4 生成、经 A 验证,
-    属 A 的固定资产;export_tex 为 D 的骨架(见函数内 TODO)。
+AI 辅助说明: 见 README「诚信声明」。
 
 设计约束(改前先看):
     本文件**不 import PyQt5**——main.py 的命令行模式也要用 compile_pdf,

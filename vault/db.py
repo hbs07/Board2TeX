@@ -5,9 +5,7 @@
     pytest tests/test_vault.py -v
 期望结果: 3 个测试全绿(增/查/按课程搜)。
 
-AI 辅助范围(课程要求):
-    本骨架由 AI 依据《分工_D_应用与评估.md》§3 生成函数签名、类型注解、
-    文档字符串;四个函数体均为待实现,由 D 独立完成并替换。
+AI 辅助说明: 见 README「诚信声明」。
 
 表结构(冻结接口,不许改字段名):
     problems(id, course, tags, tex, image_path, created_at)

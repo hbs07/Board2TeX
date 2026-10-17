@@ -11,8 +11,7 @@
     data/layout_check/annotated.png 生成;
     B 填完全部函数后,图中每行板书被单独框住,编号从上到下递增。
 
-AI 辅助范围(课程要求):
-    本文件由 AI 生成的转口与自测脚本,属 A 的集成资产;无 B 待填部分。
+AI 辅助说明: 见 README「诚信声明」。
 """
 
 from __future__ import annotations
