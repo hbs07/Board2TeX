@@ -31,9 +31,6 @@ preview.png
 Thumbs.db
 desktop.ini
 
-# AI 辅导指南(仅本地使用,不入库)
-docs/04-ai-guides/
-
 # AOCI 认知层与 opencode 配置(仅本地使用,不入库)
 aoci*.txt
 .aoci/
