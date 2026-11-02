@@ -41,9 +41,9 @@
 - [x] 2026-10-14:**A 侧代码全部完成并推送(commit `16d43fd`)**——`gui/main_window.py`(框架+5 按钮+图像上屏,`ndarray_to_qpixmap` 已含 `.copy()` 防花屏;D 的 4 个 TODO 已标注)、`gui/exporter.py`(`has_xelatex`/`compile_pdf` 完整,`export_tex` 骨架待 D;**不 import PyQt5** 供 CLI 复用)、`main.py`(`pipeline()` + 命令行)、`README.md`。**端到端已验证**:`python main.py assets/test_text.png data/exports` 出 tex+PDF;GUI offscreen 冒烟通过(人工开窗验证:`python -m gui.main_window`);踩坑记录:xelatex 不接受反斜杠路径,`compile_pdf` 内已统一转 `/`;
 - [x] 2026-10-17:AI 声明改集中式并推送(commit `fa2dfe1`):13 个代码文件头的"AI 辅助范围"段压缩为一行 `AI 辅助说明: 见 README「诚信声明」`;README 诚信声明升级为唯一权威声明(列明 AI 部分/成员部分/开源组件);四份 AI 指南的标注要求同步改为"一行指向 README";纯文档(环境指南)的 AI 声明删除。课程要求仍满足;
 - [x] 2026-10-24:**四份 AI 辅导指南公开入库**——删除 `.gitignore` 中的 `docs/04-ai-guides/` 排除,连同本文件一起推送 GitHub,组员可直接从仓库打开自己的指南;此前"仅本地"的决定作废;
+- [x] 2026-11-02:**补上"可自动验证的进度看板"**——`pytest.ini` + `tests/test_contracts.py`(冻结接口结构守卫:pre/Region/Block/Document/导出/GUI 无显示器构造,始终常绿)+ `tests/test_acceptance.py`(5 条组员验收标准,xfail 语义:`xfailed`=还没做、`xpassed`=做完了该删标记、`failed`=做了没达标);`.github/pull_request_template.md`(自测证据/接口/范围/诚信四段清单,提 PR 自动带出);README 增加"从哪开始"成员索引表(分工文档 + AI 指南 + 各自验证命令)与测试说明;venv 内补装 `pytest 9.2.0`(`uv pip install`)。**当前基线**:`python -m pytest -q` = 12 passed / 5 xfailed;`python main.py assets/test_text.png data/exports` 仍正常出 tex+PDF;
 - [x] 2026-10-11:虚拟环境确认在 `C:\Users\ASUS\AppData\Local\Board2TeX\.venv_b2t`(Python 3.12.14, cv2 4.14.0),激活命令见该目录 `Scripts\Activate.ps1`;系统 Python 3.14 不装包;
-- [ ] **下一步 = 任务 1(续)**:给 C/D 写骨架——C:`recog/formula.py`(pix2tex 模板,§4.2 已有参考实现,建议直接给完整代码+暖机脚本)+ `compose/template.py`;D:`vault/db.py`;
-- [ ] **任务 2(A 核心代码,下一优先级)**:`preprocess/pipeline.py` 的 `load_image()` + `preprocess()`;`compose/builder.py` 骨架(C 的活,但 main.py 依赖,需与 C 协调);之后 `gui/main_window.py`、`gui/exporter.py`、`main.py` 集成;
+- [ ] **当前阻塞(2026-11-02)**:B/C/D 尚未接受 GitHub 邀请 / 装好环境 / 提交首个 PR;A 侧下一步 = 按 `.github/pull_request_template.md` 的清单评审第一个 PR;
 - [ ] 待办(不急):旧目录 `D:\学校\上课\程序设计\Board2TeX` 待手动删除(关 opencode 后在普通 PowerShell 执行 `Remove-Item -LiteralPath "D:\学校\上课\程序设计\Board2TeX" -Recurse -Force`)。
 
 ---

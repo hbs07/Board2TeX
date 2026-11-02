@@ -42,6 +42,7 @@ pre, regions, doc = pipeline("board_photo.jpg")   # doc["tex_source"] 可直接�
 
 python main.py assets/test_text.png data/exports   # 命令行:照片 → .tex → PDF
 python -m gui.main_window                          # 图形界面
+python -m pytest -q                                # 契约测试 + 验收看板
 ```
 
 ## 团队
@@ -55,6 +56,27 @@ python -m gui.main_window                          # 图形界面
 
 协作方式:`main` 分支受保护,每人开 `feature/xxx` 分支开发,PR 由组长评审合并;commit 信息格式 `模块: 做了什么`。
 
+### 从哪开始
+
+每个人接手时按这个顺序:读自己的**分工文档** → 把**AI 辅导指南**整份复制给 AI(它已包含项目背景和你的任务)→ 跑通自己模块的验证命令。
+
+| 成员 | 分工文档 | AI 辅导指南 | 自己模块的验证命令 |
+|---|---|---|---|
+| A 胡秉善 | [图像与集成](docs/02-roles/Board2TeX_分工_A_图像与集成.md) | [AI 指南 A](docs/04-ai-guides/Board2TeX_AI指南_A_组长.md) | `python main.py assets/test_text.png data/exports` |
+| B 郭佳欣 | [版面分析](docs/02-roles/Board2TeX_分工_B_版面分析.md) | [AI 指南 B](docs/04-ai-guides/Board2TeX_AI指南_B_图像增强与版面.md) | `python -m layout.pipeline assets/test_text.png data/layout_check` |
+| C 陶谱州 | [识别与合成](docs/02-roles/Board2TeX_分工_C_识别与合成.md) | [AI 指南 C](docs/04-ai-guides/Board2TeX_AI指南_C_识别与合成.md) | `python -m compose.builder` |
+| D 李若宸 | [应用与评估](docs/02-roles/Board2TeX_分工_D_应用与评估.md) | [AI 指南 D](docs/04-ai-guides/Board2TeX_AI指南_D_应用与评估.md) | `python -m gui.main_window` |
+
+## 测试
+
+```powershell
+python -m pytest -q
+```
+
+- `tests/test_contracts.py`:冻结接口的结构守卫。**红了说明有人改坏了接口**,先找组长。
+- `tests/test_acceptance.py`:验收看板,每个测试对应一位组员的一条验收标准。
+  - `passed` = 已达标;`xfailed` = 负责人还没做(正常,不是 bug);`xpassed` = 做完了,提醒组长删掉 xfail 标记;`failed` = 做了但没达标。
+
 ## MVP 边界(第一版)
 
 - ✅ 单列版面、英文 + 公式混排、单张照片、CPU 推理
@@ -64,7 +86,9 @@ python -m gui.main_window                          # 图形界面
 
 - 提案与分工:`docs/01-proposal/`、`docs/02-roles/`
 - 期中汇报:`docs/03-report/`
+- AI 辅导指南(A/B/C/D 各一份,配合 AI 使用):`docs/04-ai-guides/`
 - 环境安装:`docs/05-setup/环境安装指南.md`
+- 协作规范:`.github/pull_request_template.md`(提 PR 时自动带出)
 
 ## 诚信声明(AI 辅助与开源组件)
 
