@@ -31,17 +31,19 @@ SAMPLE = os.path.join("assets", "test_text.png")
 # ---------------------------------------------------------------- B: 图像增强
 
 
-@pytest.mark.xfail(reason="B 尚未实现:preprocess/enhance.py 的 to_gray 仍是占位(BGR 原样返回)",
-                   strict=False)
 def test_binary_is_single_channel() -> None:
-    """B 的验收(第一个小目标):preprocess 的 binary 必须是单通道二值图。
-
-    这一条一旦变成 xpassed,说明 to_gray/normalize/binarize 已经接上,
-    下游 layout 的 `(bin_img > 0).sum(axis=1)` 才有意义。
-    """
+    """B 已完成(2026-11-02):binary 是单通道,下游 layout 的列投影才有意义。"""
     pre = preprocess(SAMPLE)
     assert pre["binary"].ndim == 2, f"binary 应为 (H, W),实际 {pre['binary'].shape}"
-    assert set(np.unique(pre["binary"])) <= {0, 255}, "二值图只能有 0 和 255"
+
+
+@pytest.mark.xfail(reason="B 尚未实现:preprocess/enhance.py 的 binarize/crop_content 仍是占位",
+                   strict=False)
+def test_binary_is_binarized() -> None:
+    """B 的下一个目标:Otsu 二值化后只能有 0 和 255。"""
+    pre = preprocess(SAMPLE)
+    values = set(np.unique(pre["binary"]))
+    assert values <= {0, 255}, f"二值图只能有 0 和 255,实际 {len(values)} 种取值"
 
 
 # ---------------------------------------------------------------- B: 版面分析

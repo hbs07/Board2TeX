@@ -37,7 +37,7 @@ except Exception:
 
 BASE = Path(__file__).resolve().parent
 REPORT_PATH = BASE / "env_check_report.txt"
-SMOKE_PATH = BASE / "smoke_test.py"
+SMOKE_PATH = BASE / "env_smoke.py"
 TSINGHUA = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 # venv 默认放在纯英文路径(如 C:\Users\xxx\AppData\Local\Board2TeX\.venv_b2t),

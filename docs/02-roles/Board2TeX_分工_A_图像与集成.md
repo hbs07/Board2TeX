@@ -127,7 +127,7 @@ def preprocess(path):
 
 ## 4. pix2tex 模板与暖机 `recog/formula.py`
 
-模板已由 `tools/smoke_test.py` 验证可用,直接给 C:
+模板已由 `tools/env_smoke.py` 验证可用,直接给 C:
 
 ```python
 _tex = None

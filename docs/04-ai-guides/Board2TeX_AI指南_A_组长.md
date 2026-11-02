@@ -43,7 +43,8 @@
 - [x] 2026-10-24:**四份 AI 辅导指南公开入库**——删除 `.gitignore` 中的 `docs/04-ai-guides/` 排除,连同本文件一起推送 GitHub,组员可直接从仓库打开自己的指南;此前"仅本地"的决定作废;
 - [x] 2026-11-02:**补上"可自动验证的进度看板"**——`pytest.ini` + `tests/test_contracts.py`(冻结接口结构守卫:pre/Region/Block/Document/导出/GUI 无显示器构造,始终常绿)+ `tests/test_acceptance.py`(5 条组员验收标准,xfail 语义:`xfailed`=还没做、`xpassed`=做完了该删标记、`failed`=做了没达标);`.github/pull_request_template.md`(自测证据/接口/范围/诚信四段清单,提 PR 自动带出);README 增加"从哪开始"成员索引表(分工文档 + AI 指南 + 各自验证命令)与测试说明;venv 内补装 `pytest 9.2.0`(`uv pip install`)。**当前基线**:`python -m pytest -q` = 12 passed / 5 xfailed;`python main.py assets/test_text.png data/exports` 仍正常出 tex+PDF;
 - [x] 2026-10-11:虚拟环境确认在 `C:\Users\ASUS\AppData\Local\Board2TeX\.venv_b2t`(Python 3.12.14, cv2 4.14.0),激活命令见该目录 `Scripts\Activate.ps1`;系统 Python 3.14 不装包;
-- [ ] **当前阻塞(2026-11-02)**:B/C/D 尚未接受 GitHub 邀请 / 装好环境 / 提交首个 PR;A 侧下一步 = 按 `.github/pull_request_template.md` 的清单评审第一个 PR;
+- [x] 2026-11-02:**B 的第一个提交评审通过并合并**(分支 `codex/b-enhance-to-gray-clahe`,commit `7322867` → 合并提交 `dee0962`):`to_gray`(cvtColor)+ `normalize`(CLAHE 2.0 / 8x8)与《分工_B》§3.1/§3.2 一致;实测 gray/norm 均为 `(H, W) uint8`, `preprocess` 的 binary 已由三通道变单通道;`binarize`/`crop_content` 仍是占位,等 B 继续。评审意见:分支应叫 `feature/xxx`、commit 要中文「模块: 做了什么」、函数实现完要删掉 TODO 标记(已由 A 清理,并修正 3 空行为 2);同时把 `tools/smoke_test.py` 改名为 `tools/env_smoke.py`——它会被 pytest 的 `*_test.py` 规则误收,一跑就真的加载 PaddleOCR/pix2tex,单次 4.5 分钟;
+- [ ] **当前阻塞(2026-11-02)**:C/D 尚未提交任何代码(连分支都没有);B 已合并首个提交,下一步 `binarize`/`crop_content`;A 侧下一步 = 继续评审 B 的后续提交,并盯 C/D 的首次 PR;
 - [ ] 待办(不急):旧目录 `D:\学校\上课\程序设计\Board2TeX` 待手动删除(关 opencode 后在普通 PowerShell 执行 `Remove-Item -LiteralPath "D:\学校\上课\程序设计\Board2TeX" -Recurse -Force`)。
 
 ---

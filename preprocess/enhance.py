@@ -34,9 +34,7 @@ def to_gray(bgr: np.ndarray) -> np.ndarray:
 g = to_gray(cv2.imread('assets/test_text.png')); print(g.shape, g.dtype)"
     期望: (H, W) uint8 —— 比输入少一维。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§3.1 实现(一行)
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-
 
 
 def normalize(gray: np.ndarray) -> np.ndarray:
@@ -45,7 +43,6 @@ def normalize(gray: np.ndarray) -> np.ndarray:
     用 cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) 再 .apply。
     验证: 对同一张图,角落发暗的区域在 norm.png 里字迹应更清晰均匀。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§3.2 实现(两行)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     return clahe.apply(gray)
 
