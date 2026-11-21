@@ -124,7 +124,22 @@ def test_analyze_layout_returns_valid_regions() -> None:
 # ---------------------------------------------------------------- 合成(C)
 
 
-def test_compose_document_returns_blocks_and_tex_source() -> None:
+def test_compose_document_returns_blocks_and_tex_source(monkeypatch) -> None:
+    # 不加载识别模型:把 recognize 换成假函数,只测"Region -> Block -> tex"的拼装
+    import recog.engine as engine
+
+    def fake_recognize(region):
+        return {
+            "order": region["order"],
+            "type": region["type"],
+            "content": "x",
+            "latex": "x",
+            "confidence": 0.9,
+            "bbox": region["bbox"],
+        }
+
+    monkeypatch.setattr(engine, "recognize", fake_recognize)
+
     doc = compose_document(_fake_regions())
     assert set(doc) == {"blocks", "tex_source"}, f"Document 字段不对: {sorted(doc)}"
     assert len(doc["blocks"]) == 2, "一个 Region 必须对应一个 Block"
@@ -205,7 +220,9 @@ def test_exporter_does_not_import_pyqt() -> None:
 # ---------------------------------------------------------------- 一条龙(A)
 
 
+@pytest.mark.slow
 def test_pipeline_end_to_end_types() -> None:
+    """真跑一条龙(会加载两个模型,默认跳过)。"""
     pre, regions, doc = pipeline(SAMPLE)
     assert set(pre) == {"binary", "bgr"}
     assert isinstance(regions, list)
