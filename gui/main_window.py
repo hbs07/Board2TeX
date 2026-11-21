@@ -123,8 +123,9 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         for text, slot, role, tip in [
-            ("导入图片", self.on_import, "", "选择一张板书照片(png / jpg / bmp)"),
-            ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放)"),
+            ("导入图片", self.on_import, "", "选择一张或多张板书照片(png / jpg / bmp)"),
+            ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
+            ("调整顺序", self.on_reorder_images, "", "调整多张板书的合并顺序"),
             ("运行识别", self.on_run, "primary", "预处理 → 切行 → 识别 → 合成;首次会加载模型"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
@@ -402,11 +403,48 @@ class MainWindow(QMainWindow):
             try:
                 self._image_pixmaps.append(ndarray_to_qpixmap(load_image(path)))
             except Exception:
-                continue
+                self._image_pixmaps.append(QPixmap())   # 坏图占位,保证索引对齐
         self.statusBar().showMessage(
             f"已导入 {len(paths)} 张(可点「查看原图」);正在识别…"
         )
         self.on_run()          # 导入即识别,少点一次按钮
+
+    def on_reorder_images(self):
+        if len(self.image_paths) < 2:
+            QMessageBox.information(self, "提示", "至少导入两张图片才能调整顺序")
+            return
+
+        from gui.order_dialog import OrderDialog
+
+        dialog = OrderDialog(
+            self,
+            [os.path.basename(p) for p in self.image_paths],
+            self._image_pixmaps,
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        order = dialog.order()
+        if order == list(range(len(order))):
+            return
+        self._apply_page_order(order)
+        self.statusBar().showMessage("已调整板书顺序,预览已更新")
+
+    def _apply_page_order(self, order: list[int]) -> None:
+        """按新顺序重排图片与 Blocks(不重新识别)。"""
+        self.image_paths = [self.image_paths[i] for i in order]
+        self._image_pixmaps = [self._image_pixmaps[i] for i in order]
+        if not self.doc:
+            return
+
+        from compose.builder import reorder_pages
+
+        self.doc["blocks"], self._page_sizes = reorder_pages(
+            self.doc["blocks"], self._page_sizes, order
+        )
+        self._rebuild_tex()
+        self.show_blocks()
+        self.preview_pane.compile_now(self.doc["tex_source"])
 
     def on_view_image(self):
         if not self._image_pixmaps:

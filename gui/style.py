@@ -308,6 +308,25 @@ QTextEdit {{
 QMessageBox {{
     background: white;
 }}
+QListWidget {{
+    background: white;
+    border: 1px solid {COLORS["border"]};
+    border-radius: 10px;
+    padding: 6px;
+    outline: none;
+}}
+QListWidget::item {{
+    padding: 6px;
+    border-radius: 8px;
+    color: {COLORS["text"]};
+}}
+QListWidget::item:hover {{
+    background: #F8FAFC;
+}}
+QListWidget::item:selected {{
+    background: {COLORS["accent_bg"]};
+    color: #1D4ED8;
+}}
 """
 
 

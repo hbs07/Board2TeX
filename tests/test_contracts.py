@@ -176,6 +176,22 @@ def test_merge_documents_orders_and_page_breaks() -> None:
     assert r"\begin{document}" in merged["tex_source"]
 
 
+def test_reorder_pages_renumbers_blocks() -> None:
+    """调整页顺序: 页大小跟着走,block 的 order 重新从 0 连续编号。"""
+    from compose.builder import reorder_pages
+
+    blocks = [
+        {"order": i, "type": "text", "content": f"t{i}",
+         "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+        for i in range(3)                    # 页1: t0,t1;页2: t2
+    ]
+    new_blocks, new_sizes = reorder_pages(blocks, [2, 1], [1, 0])
+
+    assert new_sizes == [1, 2]
+    assert [b["order"] for b in new_blocks] == [0, 1, 2]
+    assert [b["content"] for b in new_blocks] == ["t2", "t0", "t1"]
+
+
 # ---------------------------------------------------------------- 识别(C)
 
 

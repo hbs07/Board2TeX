@@ -124,6 +124,30 @@ def merge_documents(docs: list[dict]) -> tuple[dict, list[int]]:
     return {"blocks": blocks, "tex_source": TEMPLATE.replace("% BODY", body)}, page_sizes
 
 
+def reorder_pages(blocks: list[dict], page_sizes: list[int],
+                  order: list[int]) -> tuple[list[dict], list[int]]:
+    """按新的页顺序重排合并结果,不需要重新识别。
+
+    blocks / page_sizes 是 merge_documents 的输出;
+    order 是旧页索引的排列,例如 [2, 0, 1] 表示第三张排到最前。
+    返回 (new_blocks, new_sizes),block 的 order 重新连续编号。
+    """
+    slices: list[list[dict]] = []
+    start = 0
+    for size in page_sizes:
+        slices.append(blocks[start:start + size])
+        start += size
+
+    new_blocks: list[dict] = []
+    new_sizes: list[int] = []
+    for index in order:
+        part = slices[index]
+        offset = len(new_blocks)
+        new_blocks.extend(dict(b, order=offset + i) for i, b in enumerate(part))
+        new_sizes.append(len(part))
+    return new_blocks, new_sizes
+
+
 if __name__ == "__main__":
     import os
     import shutil
