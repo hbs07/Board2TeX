@@ -165,7 +165,19 @@ class MainWindow(QMainWindow):
         for b in self.doc["blocks"]:
             order = b["order"]
             conf = float(b["confidence"])
-            low_conf = 0.0 < conf < TEXT_CONF_THRESHOLD
+
+            # 红色 = "建议人工核对",但两种行的判据不同:
+            #   文字行: 看置信度(< TEXT_CONF_THRESHOLD);
+            #   公式行: pix2tex 不给真实置信度(固定 0.8),拿 0.8 当低置信度
+            #           会让每条公式都变红,所以改看"花括号是否配对 / 是否为空"。
+            if b["type"] == "formula":
+                from recog.postprocess import braces_balanced
+
+                risky = (not b["latex"].strip()) or (not braces_balanced(b["latex"]))
+                tip = "公式: 空结果或花括号不配对,建议核对"
+            else:
+                risky = 0.0 < conf < TEXT_CONF_THRESHOLD
+                tip = f"文字: 置信度 {conf:.2f} < {TEXT_CONF_THRESHOLD},建议核对"
 
             row = QWidget()
             row_layout = QHBoxLayout(row)
@@ -173,13 +185,16 @@ class MainWindow(QMainWindow):
 
             tag = QLabel(f'{order} [{b["type"]}] {conf:.2f}')
             tag.setMinimumWidth(120)
-            if low_conf:
+            if risky:
                 tag.setStyleSheet("color: #c0392b;")
+                tag.setToolTip(tip)
 
             edit = QLineEdit(b["latex"])
             edit.setPlaceholderText("(空)")
-            if low_conf:
+            edit.setCursorPosition(0)          # 默认滚到末尾会看不到行首,拉回开头
+            if risky:
                 edit.setStyleSheet("border: 1px solid #c0392b;")
+                edit.setToolTip(tip)
             edit.textChanged.connect(
                 lambda text, o=order: self._on_block_edited(o, text)
             )
@@ -188,6 +203,11 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(edit, 1)
             self.editor_layout.addWidget(row)
             self.block_edits[order] = edit
+
+        legend = QLabel("红框 = 建议人工核对:文字看置信度(<0.85),公式看括号是否配对")
+        legend.setWordWrap(True)
+        legend.setStyleSheet("color: #888888; padding-top: 6px;")
+        self.editor_layout.addWidget(legend)
 
     def _on_block_edited(self, order: int, text: str):
         """编辑框一改,立刻写回 self.doc(导出/预览前再统一重建 tex)。"""
