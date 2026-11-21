@@ -68,8 +68,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Board2TeX · 板书转 LaTeX")
-        self.resize(1380, 800)
-        self.setMinimumSize(1120, 640)
+        self.resize(1440, 860)
+        self.setMinimumSize(1200, 680)
 
         # ---- 识别结果状态(冻结接口的数据在这里流转) ----
         self.image_path: str | None = None
@@ -196,7 +196,7 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 3)
         splitter.setStretchFactor(2, 4)
-        splitter.setSizes([380, 400, 480])
+        splitter.setSizes([280, 460, 620])
         root.addWidget(splitter, 1)
 
         self._add_card_shadow(left_card)
@@ -292,24 +292,24 @@ class MainWindow(QMainWindow):
             row = QFrame()
             row.setObjectName("blockRow")
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(10, 8, 10, 8)
+            row_layout.setContentsMargins(10, 9, 10, 9)
             row_layout.setSpacing(8)
 
             order_label = QLabel(f"#{order}")
             order_label.setObjectName("orderLabel")
-            order_label.setFixedWidth(28)
+            order_label.setFixedWidth(30)
 
             chip = QLabel("FORMULA" if b["type"] == "formula" else "TEXT")
             chip.setObjectName(
                 "chipFormula" if b["type"] == "formula" else "chipText"
             )
             chip.setAlignment(Qt.AlignCenter)
-            chip.setFixedWidth(64)
+            chip.setFixedWidth(66)
 
             conf_label = QLabel(f"{conf:.2f}")
             conf_label.setObjectName("confLabel")
             conf_label.setProperty("risky", "true" if risky else "false")
-            conf_label.setFixedWidth(36)
+            conf_label.setFixedWidth(40)
             conf_label.setToolTip(tip if risky else "置信度")
 
             edit = QLineEdit(b["latex"])
@@ -317,8 +317,7 @@ class MainWindow(QMainWindow):
             edit.setPlaceholderText("(空)")
             edit.setCursorPosition(0)          # 默认滚到末尾会看不到行首,拉回开头
             edit.setProperty("risky", "true" if risky else "false")
-            if risky:
-                edit.setToolTip(tip)
+            edit.setToolTip(tip if risky else f"完整内容:\n{b['latex']}")
             edit.textChanged.connect(
                 lambda text, o=order: self._on_block_edited(o, text)
             )

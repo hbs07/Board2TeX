@@ -190,9 +190,9 @@ QLineEdit#blockEdit {{
     background: #FFFFFF;
     border: 1px solid {COLORS["border"]};
     border-radius: 6px;
-    padding: 5px 8px;
+    padding: 6px 10px;
     font-family: Consolas, "Cascadia Mono", monospace;
-    font-size: 12px;
+    font-size: 13px;
     color: {COLORS["text"]};
     selection-background-color: #BFDBFE;
 }}
@@ -263,6 +263,17 @@ QLabel#livePage {{
     border: 1px solid {COLORS["border"]};
     border-radius: 8px;
     padding: 4px;
+}}
+QPushButton#zoomBtn {{
+    padding: 2px 8px;
+    font-size: 14px;
+    font-weight: 600;
+    min-width: 18px;
+}}
+QLabel#zoomLabel {{
+    color: {COLORS["muted"]};
+    font-size: 11px;
+    min-width: 32px;
 }}
 QSplitter::handle {{
     background: transparent;

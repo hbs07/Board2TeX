@@ -31,7 +31,7 @@ from gui.exporter import has_xelatex
 from gui.preview import export_preview_pdf, render_pdf_pages
 
 LIVE_DIR = os.path.join("data", "preview")
-DEBOUNCE_MS = 900
+DEBOUNCE_MS = 300        # 停手 0.3s 就重编(预览用 pdflatex 约 0.6s,接近即时)
 MIN_PANE_WIDTH = 260
 
 
@@ -69,6 +69,7 @@ class PreviewPane(QFrame):
         self.setObjectName("card")
         self._on_open = on_open
         self._tex: str | None = None
+        self._last_compiled: str | None = None   # 已成功编译的 tex(相同的就不再编)
         self._generation = 0
         self._busy = False
         self._pending = False
@@ -96,6 +97,22 @@ class PreviewPane(QFrame):
         title.setObjectName("cardTitle")
         self._status = QLabel("等待识别")
         self._status.setObjectName("previewStatus")
+
+        self._zoom = 1.0
+        self._zoom_label = QLabel("100%")
+        self._zoom_label.setObjectName("zoomLabel")
+        self._zoom_label.setToolTip("相对'适应宽度'的缩放比例")
+        zoom_out = QPushButton("−")
+        zoom_out.setObjectName("zoomBtn")
+        zoom_out.setCursor(Qt.PointingHandCursor)
+        zoom_out.setToolTip("缩小")
+        zoom_out.clicked.connect(lambda: self._set_zoom(self._zoom / 1.25))
+        zoom_in = QPushButton("+")
+        zoom_in.setObjectName("zoomBtn")
+        zoom_in.setCursor(Qt.PointingHandCursor)
+        zoom_in.setToolTip("放大(放大后可横向滚动)")
+        zoom_in.clicked.connect(lambda: self._set_zoom(self._zoom * 1.25))
+
         self._zoom_btn = QPushButton("放大")
         self._zoom_btn.setCursor(Qt.PointingHandCursor)
         self._zoom_btn.setToolTip("在新窗口查看完整预览")
@@ -106,6 +123,10 @@ class PreviewPane(QFrame):
         head.addSpacing(8)
         head.addWidget(self._status)
         head.addStretch()
+        head.addWidget(zoom_out)
+        head.addWidget(self._zoom_label)
+        head.addWidget(zoom_in)
+        head.addSpacing(6)
         head.addWidget(self._zoom_btn)
         layout.addLayout(head)
 
@@ -128,6 +149,7 @@ class PreviewPane(QFrame):
         """清空预览(还没识别 / 换了图片时)。"""
         self._timer.stop()
         self._tex = None
+        self._last_compiled = None
         self._pixmaps = []
         self._clear_pages()
         self._status.setText("等待识别")
@@ -155,6 +177,8 @@ class PreviewPane(QFrame):
         if self._busy:                 # 正在编译: 记一笔, 完成后再编最新的
             self._pending = True
             return
+        if self._tex == self._last_compiled:
+            return                     # 内容没变(比如光标移了一下), 不重复编
         if not has_xelatex():
             self._status.setText("未安装 xelatex,无法预览")
             return
@@ -187,6 +211,7 @@ class PreviewPane(QFrame):
 
         self._pixmaps = [QPixmap(p) for p in pages]
         self._render_pages()
+        self._last_compiled = self._tex
         self._status.setText(f"第 1 页 / 共 {len(pages)} 页")
         self._zoom_btn.setEnabled(True)
 
@@ -216,13 +241,21 @@ class PreviewPane(QFrame):
 
     def _render_pages(self):
         self._clear_pages()
-        width = max(self._scroll.viewport().width() - 16, MIN_PANE_WIDTH)
+        fit_width = max(self._scroll.viewport().width() - 16, MIN_PANE_WIDTH)
+        width = int(fit_width * self._zoom)
         for pixmap in self._pixmaps:
             label = QLabel()
             label.setObjectName("livePage")
             label.setAlignment(Qt.AlignCenter)
             label.setPixmap(pixmap.scaledToWidth(width, Qt.SmoothTransformation))
             self._host_layout.insertWidget(self._host_layout.count() - 1, label)
+
+    def _set_zoom(self, value: float):
+        """缩放预览: 1.0 = 适应栏宽;放大后横向滚动查看。"""
+        self._zoom = max(0.6, min(3.0, value))
+        self._zoom_label.setText(f"{self._zoom * 100:.0f}%")
+        if self._pixmaps:
+            self._render_pages()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

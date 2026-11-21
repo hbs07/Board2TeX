@@ -28,22 +28,36 @@ def has_xelatex() -> bool:
     return shutil.which("xelatex") is not None
 
 
-def compile_pdf(tex_path: str, out_dir: str) -> str:
-    """用 xelatex 把 .tex 编译成 PDF,返回 PDF 路径。
+def has_pdflatex() -> bool:
+    """检测本机是否安装 pdflatex(预览用的快速引擎)。"""
+    return shutil.which("pdflatex") is not None
 
-    - 未安装 xelatex 时抛 RuntimeError(调用方捕获后弹窗提示);
-    - 编译失败抛 RuntimeError 并带上 .log 路径,方便定位;
-    - xelatex 的控制台输出直接透传,联调时方便看进度。
+
+def compile_pdf(tex_path: str, out_dir: str, engine: str = "xelatex",
+                quiet: bool = False) -> str:
+    """把 .tex 编译成 PDF,返回 PDF 路径。
+
+    - engine="xelatex": 最终导出用(支持 Unicode/中文,慢一点);
+    - engine="pdflatex": 实时预览用(纯英文模板下快 5 倍,约 0.6s);
+    - quiet=True: 不把 TeX 日志打到控制台(实时预览每几秒一次,刷屏没意义);
+    - 未安装该引擎时抛 RuntimeError(调用方捕获后弹窗提示);
+    - 编译失败抛 RuntimeError 并带上 .log 路径,方便定位。
     """
-    if not has_xelatex():
-        raise RuntimeError("未安装 xelatex, 请先安装 TeX Live 或 MiKTeX")
-    # TeX 会把反斜杠当控制符,统一转成正斜杠(Windows 下 xelatex 也接受 /)
+    if engine == "xelatex":
+        installed = has_xelatex()
+    else:
+        installed = shutil.which(engine) is not None
+    if not installed:
+        raise RuntimeError(f"未安装 {engine}, 请先安装 TeX Live 或 MiKTeX")
+    # TeX 会把反斜杠当控制符,统一转成正斜杠(Windows 下也接受 /)
     tex_arg = tex_path.replace("\\", "/")
     out_arg = out_dir.replace("\\", "/")
     subprocess.run(
-        ["xelatex", "-interaction=nonstopmode",
+        [engine, "-interaction=nonstopmode",
          "-output-directory", out_arg, tex_arg],
         check=False,
+        stdout=subprocess.DEVNULL if quiet else None,
+        stderr=subprocess.DEVNULL if quiet else None,
     )
     pdf_path = os.path.join(
         out_dir, os.path.splitext(os.path.basename(tex_path))[0] + ".pdf"

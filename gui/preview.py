@@ -29,7 +29,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from gui.exporter import compile_pdf, has_xelatex
+from gui.exporter import compile_pdf, has_pdflatex, has_xelatex
 
 PREVIEW_DIR = os.path.join("data", "preview")
 PAGE_DPI = 140          # 渲染精度: 140dpi 在 820px 宽下足够清晰,又不至于太大
@@ -44,14 +44,27 @@ def _clean(out_dir: str, pattern: str) -> None:
             pass
 
 
-def export_preview_pdf(doc: dict, out_dir: str = PREVIEW_DIR) -> str:
-    """把 doc 写成 preview.tex 并编译,返回 PDF 路径。"""
+def export_preview_pdf(doc: dict, out_dir: str = PREVIEW_DIR,
+                       engine: str | None = None) -> str:
+    """把 doc 写成 preview.tex 并编译,返回 PDF 路径。
+
+    预览优先用 pdflatex(本机实测 0.6s,xelatex 要 3.2s);
+    pdflatex 编不过时(比如混进 Unicode 字符)自动回退 xelatex,保证"能预览"。
+    """
     os.makedirs(out_dir, exist_ok=True)
     _clean(out_dir, "preview*")
     tex_path = os.path.join(out_dir, "preview.tex")
     with open(tex_path, "w", encoding="utf-8") as f:
         f.write(doc["tex_source"])
-    return compile_pdf(tex_path, out_dir)
+
+    if engine is None:
+        engine = "pdflatex" if has_pdflatex() else "xelatex"
+    try:
+        return compile_pdf(tex_path, out_dir, engine=engine, quiet=True)
+    except RuntimeError:
+        if engine != "xelatex" and has_xelatex():
+            return compile_pdf(tex_path, out_dir, engine="xelatex", quiet=True)
+        raise
 
 
 def render_pdf_pages(pdf_path: str, out_dir: str = PREVIEW_DIR,
