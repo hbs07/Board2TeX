@@ -80,11 +80,11 @@ def is_configured() -> bool:
     return bool(api_key())
 
 
-def _image_data_uri(path: str) -> str:
-    img = load_image(path)                     # 已限制长边 <=1600,兼容中文路径
+def _image_data_uri(img) -> str:
+    """BGR/灰度 numpy 图 -> data URI。"""
     ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
     if not ok:
-        raise RuntimeError(f"图片编码失败: {path}")
+        raise RuntimeError("图片编码失败")
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
 
 
@@ -151,8 +151,8 @@ def parse_blocks(content: str) -> list[dict]:
     return blocks
 
 
-def transcribe_image(image_path: str) -> list[dict]:
-    """整张图 -> Block 列表。网络/接口错误抛 RuntimeError。"""
+def transcribe_array(img) -> list[dict]:
+    """BGR/灰度图 -> Block 列表。网络/接口错误抛 RuntimeError。"""
     if not is_configured():
         raise RuntimeError(
             "未配置视觉模型 API。\n"
@@ -167,7 +167,7 @@ def transcribe_image(image_path: str) -> list[dict]:
             "content": [
                 {"type": "text", "text": PROMPT},
                 {"type": "image_url",
-                 "image_url": {"url": _image_data_uri(image_path)}},
+                 "image_url": {"url": _image_data_uri(img)}},
             ],
         }],
         "temperature": 0,
@@ -203,3 +203,24 @@ def transcribe_image(image_path: str) -> list[dict]:
     if not blocks:
         raise RuntimeError("模型没有识别出任何行")
     return blocks
+
+
+def transcribe_image(image_path: str) -> list[dict]:
+    """路径入口: 读图(兼容中文路径)后交给 transcribe_array。"""
+    return transcribe_array(load_image(image_path))
+
+
+def prepare_for_vlm(binary) -> "np.ndarray":
+    """把预处理得到的二值图变成 VLM 更稳的"黑字白底"三通道图。
+
+    preprocess() 的 binary 约定不保证极性(通常黑字白底,也可能是黑底白字);
+    统一翻成黑字白底再上传,模型对这类输入最稳定。
+    """
+    import numpy as np
+
+    img = binary
+    if float(np.mean(img)) < 127:          # 背景偏黑 -> 字是白的,反转
+        img = 255 - img
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    return img

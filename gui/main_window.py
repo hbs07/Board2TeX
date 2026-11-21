@@ -451,9 +451,18 @@ class MainWindow(QMainWindow):
         self._image_pixmaps = []
         self._load_pixmaps(paths)
         self.statusBar().showMessage(
-            f"已导入 {len(paths)} 张(可点「查看原图」);正在识别…"
+            f"已导入 {len(paths)} 张(可点「查看原图」)"
         )
-        self.on_run()          # 导入即识别,少点一次按钮
+        from recog import vlm
+
+        if vlm.is_configured():
+            self.statusBar().showMessage(
+                f"已导入 {len(paths)} 张;预处理后自动 AI 识别…"
+            )
+            self.on_ai_recognize()
+        else:
+            self.statusBar().showMessage(f"已导入 {len(paths)} 张;本地识别…")
+            self.on_run()
 
     def _load_pixmaps(self, paths: list[str]) -> None:
         for path in paths:
@@ -479,21 +488,23 @@ class MainWindow(QMainWindow):
             self._page_sizes = []
             self.show_blocks()
             self.preview_pane.clear()
-            self.on_run()
+            from recog import vlm
+
+            if vlm.is_configured():
+                self.on_ai_recognize()
+            else:
+                self.on_run()
             return
 
         before = len(self.image_paths)
         self.image_paths.extend(new_paths)
         self._load_pixmaps(new_paths)
 
-        result = self._recognize_paths(new_paths)
-        if result is None:             # 失败则回滚,保持状态一致
+        docs = self._ai_recognize_paths(new_paths)
+        if docs is None:               # 失败则回滚,保持状态一致
             del self.image_paths[before:]
             del self._image_pixmaps[before:]
             return
-
-        _pres, regions_all, docs = result
-        self.regions.extend(regions_all)
 
         if self.doc is None:
             from compose.builder import merge_documents
@@ -615,7 +626,7 @@ class MainWindow(QMainWindow):
         return pres, regions_all, docs
 
     def on_ai_recognize(self):
-        """调用视觉大模型识别(手写/双栏兜底),结果同样进入 Block/Document。"""
+        """调用视觉大模型识别(手写/双栏),上传的是预处理后的图。"""
         if not self.image_paths:
             QMessageBox.information(self, "提示", "请先导入图片")
             return
@@ -633,26 +644,49 @@ class MainWindow(QMainWindow):
             )
             return
 
-        from compose.builder import build_body, merge_documents
+        docs = self._ai_recognize_paths(self.image_paths)
+        if docs is None:
+            return
+
+        from compose.builder import merge_documents
+
+        self.doc, self._page_sizes = merge_documents(docs)
+        self.regions = []
+        self.show_blocks()
+        self._update_result_title()
+        self.statusBar().showMessage(
+            f"AI 识别完成: {len(self.image_paths)} 张 / "
+            f"{len(self.doc['blocks'])} 块"
+        )
+        self.preview_pane.compile_now(self.doc["tex_source"])
+
+    def _ai_recognize_paths(self, paths: list[str]) -> list[dict] | None:
+        """逐张 预处理 -> 上传视觉模型 -> Document 列表;失败返回 None。"""
+        from compose.builder import build_body
         from compose.template import TEMPLATE
+        from preprocess.pipeline import preprocess
+        from recog import vlm
 
         docs: list[dict] = []
-        total = len(self.image_paths)
+        total = len(paths)
         self.setEnabled(False)
         try:
-            for index, path in enumerate(self.image_paths, 1):
+            for index, path in enumerate(paths, 1):
                 self.statusBar().showMessage(
-                    f"AI 识别 {index}/{total}: {os.path.basename(path)}…"
+                    f"预处理 + AI 识别 {index}/{total}: "
+                    f"{os.path.basename(path)}…"
                 )
                 QApplication.processEvents()
                 try:
-                    blocks = vlm.transcribe_image(path)
-                except Exception as exc:        # 网络/接口/解析错误都提示清楚
+                    pre = preprocess(path)
+                    image = vlm.prepare_for_vlm(pre["binary"])
+                    blocks = vlm.transcribe_array(image)
+                except Exception as exc:        # 预处理/网络/解析错误都提示清楚
                     QMessageBox.critical(
                         self, "AI 识别失败",
                         f"{os.path.basename(path)}\n{exc}",
                     )
-                    return
+                    return None
                 body = build_body(blocks)
                 docs.append({
                     "blocks": blocks,
@@ -660,15 +694,7 @@ class MainWindow(QMainWindow):
                 })
         finally:
             self.setEnabled(True)
-
-        self.doc, self._page_sizes = merge_documents(docs)
-        self.regions = []
-        self.show_blocks()
-        self._update_result_title()
-        self.statusBar().showMessage(
-            f"AI 识别完成: {total} 张 / {len(self.doc['blocks'])} 块"
-        )
-        self.preview_pane.compile_now(self.doc["tex_source"])
+        return docs
 
     def _update_result_title(self) -> None:
         blocks = self.doc["blocks"] if self.doc else []
