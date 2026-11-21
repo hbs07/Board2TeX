@@ -354,6 +354,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"已导入: {os.path.basename(path)}(可点「查看原图」)"
         )
+        self.on_run()          # 导入即识别,少点一次按钮
 
     def on_view_image(self):
         if self._image_pixmap is None:
@@ -369,9 +370,15 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先导入图片")
             return
         self.setEnabled(False)  # 同步版:识别期间界面禁点,CPU 推理需几秒~几十秒
+        self.statusBar().showMessage("正在识别…(首次会加载模型,请稍候)")
         QApplication.processEvents()
         try:
             self.pre, self.regions, self.doc = pipeline(self.image_path)
+        except Exception as exc:                # 识别失败不能把窗口卡死
+            QMessageBox.critical(
+                self, "识别失败", f"{type(exc).__name__}: {exc}"
+            )
+            return
         finally:
             self.setEnabled(True)
         self.show_blocks()

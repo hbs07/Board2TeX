@@ -32,7 +32,7 @@ from PyQt5.QtWidgets import (
 from gui.exporter import compile_pdf, has_pdflatex, has_xelatex
 
 PREVIEW_DIR = os.path.join("data", "preview")
-PAGE_DPI = 140          # 渲染精度: 140dpi 在 820px 宽下足够清晰,又不至于太大
+PAGE_DPI = 200          # 渲染精度: 200dpi 保证放大/缩小时字口仍然干净
 PAGE_WIDTH = 820        # 页面上屏宽度(px)
 
 
@@ -68,8 +68,13 @@ def export_preview_pdf(doc: dict, out_dir: str = PREVIEW_DIR,
 
 
 def render_pdf_pages(pdf_path: str, out_dir: str = PREVIEW_DIR,
-                     dpi: int = PAGE_DPI) -> list[str]:
-    """用 pdftoppm 把 PDF 每页转成 PNG,返回按页序排好的路径列表。"""
+                     dpi: int = PAGE_DPI,
+                     width_px: int | None = None) -> list[str]:
+    """用 pdftoppm 把 PDF 每页转成 PNG,返回按页序排好的路径列表。
+
+    width_px 不为空时按"目标像素宽"渲染(-scale-to-x),这样上屏是 1:1,
+    不会因为二次缩放把细笔画糊掉;为空则按 dpi 渲染。
+    """
     pdftoppm = shutil.which("pdftoppm")
     if pdftoppm is None:
         raise RuntimeError(
@@ -79,11 +84,14 @@ def render_pdf_pages(pdf_path: str, out_dir: str = PREVIEW_DIR,
 
     _clean(out_dir, "page-*.png")
     prefix = os.path.join(out_dir, "page")
-    subprocess.run(
-        [pdftoppm, "-png", "-r", str(dpi),
-         pdf_path.replace("\\", "/"), prefix.replace("\\", "/")],
-        check=False, capture_output=True,
-    )
+    cmd = [pdftoppm, "-png"]
+    if width_px:
+        cmd += ["-scale-to-x", str(max(int(width_px), 50)), "-scale-to-y", "-1"]
+    else:
+        cmd += ["-r", str(dpi)]
+    cmd += [pdf_path.replace("\\", "/"), prefix.replace("\\", "/")]
+    subprocess.run(cmd, check=False, capture_output=True)
+
     pages = sorted(glob.glob(os.path.join(out_dir, "page-*.png")), key=_page_number)
     if not pages:
         raise RuntimeError("PDF 已生成,但渲染成图片失败,请直接打开 PDF 查看。")
@@ -107,7 +115,7 @@ def create_preview_dialog(parent, doc: dict) -> QDialog:
     QApplication.setOverrideCursor(Qt.WaitCursor)
     try:
         pdf_path = export_preview_pdf(doc)
-        pages = render_pdf_pages(pdf_path)
+        pages = render_pdf_pages(pdf_path, width_px=PAGE_WIDTH)
     finally:
         QApplication.restoreOverrideCursor()
 
@@ -145,9 +153,7 @@ def create_preview_dialog(parent, doc: dict) -> QDialog:
         page.setObjectName("previewPage")
         page.setAlignment(Qt.AlignCenter)
         pixmap = QPixmap(page_path)
-        page.setPixmap(
-            pixmap.scaledToWidth(PAGE_WIDTH, Qt.SmoothTransformation)
-        )
+        page.setPixmap(pixmap)      # 已按 PAGE_WIDTH 渲染,1:1 上屏,不再二次缩放
         host_layout.addWidget(page)
 
     host_layout.addStretch()

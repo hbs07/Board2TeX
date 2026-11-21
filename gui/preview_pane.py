@@ -36,29 +36,30 @@ MIN_PANE_WIDTH = 260
 
 
 class _Signals(QObject):
-    done = pyqtSignal(int, list)      # 代号, 页面 PNG 列表
-    failed = pyqtSignal(int, str)     # 代号, 错误信息
+    done = pyqtSignal(int, list, int)   # 代号, 页面 PNG 列表, 渲染宽度
+    failed = pyqtSignal(int, str)       # 代号, 错误信息
 
 
 class _CompileTask(QRunnable):
     """后台任务: tex -> PDF -> 逐页 PNG。"""
 
     def __init__(self, generation: int, tex_source: str, out_dir: str,
-                 signals: _Signals):
+                 width_px: int, signals: _Signals):
         super().__init__()
         self.generation = generation
         self.doc = {"tex_source": tex_source}
         self.out_dir = out_dir
+        self.width_px = width_px
         self.signals = signals
 
     def run(self) -> None:                      # 在子线程执行
         try:
             pdf_path = export_preview_pdf(self.doc, self.out_dir)
-            pages = render_pdf_pages(pdf_path, self.out_dir)
+            pages = render_pdf_pages(pdf_path, self.out_dir, width_px=self.width_px)
         except Exception as exc:                # 编译失败不该让程序崩
             self.signals.failed.emit(self.generation, str(exc))
             return
-        self.signals.done.emit(self.generation, pages)
+        self.signals.done.emit(self.generation, pages, self.width_px)
 
 
 class PreviewPane(QFrame):
@@ -74,6 +75,9 @@ class PreviewPane(QFrame):
         self._busy = False
         self._pending = False
         self._pixmaps: list[QPixmap] = []
+        self._pdf_path: str | None = None
+        self._page_dir: str | None = None
+        self._rendered_width = 0          # 当前 pixmap 是按多少像素宽渲染的
 
         self._signals = _Signals()
         self._signals.done.connect(self._on_done)
@@ -83,6 +87,17 @@ class PreviewPane(QFrame):
         self._timer.setSingleShot(True)
         self._timer.setInterval(DEBOUNCE_MS)
         self._timer.timeout.connect(self._compile_latest)
+
+        # 拖动分隔条时先快速缩放(便宜),停手后再按新宽度重渲染(清晰)
+        self._scale_timer = QTimer(self)
+        self._scale_timer.setSingleShot(True)
+        self._scale_timer.setInterval(60)
+        self._scale_timer.timeout.connect(self._render_pages)
+
+        self._sharpen_timer = QTimer(self)
+        self._sharpen_timer.setSingleShot(True)
+        self._sharpen_timer.setInterval(350)
+        self._sharpen_timer.timeout.connect(self._sharpen)
 
         self._build_ui()
 
@@ -148,9 +163,14 @@ class PreviewPane(QFrame):
     def clear(self):
         """清空预览(还没识别 / 换了图片时)。"""
         self._timer.stop()
+        self._scale_timer.stop()
+        self._sharpen_timer.stop()
         self._tex = None
         self._last_compiled = None
         self._pixmaps = []
+        self._pdf_path = None
+        self._page_dir = None
+        self._rendered_width = 0
         self._clear_pages()
         self._status.setText("等待识别")
         self._zoom_btn.setEnabled(False)
@@ -190,7 +210,8 @@ class PreviewPane(QFrame):
         self._clean_old_dirs(out_dir)
 
         QThreadPool.globalInstance().start(
-            _CompileTask(self._generation, self._tex, out_dir, self._signals)
+            _CompileTask(self._generation, self._tex, out_dir,
+                         self._target_width(), self._signals)
         )
 
     def _clean_old_dirs(self, keep: str) -> None:
@@ -200,7 +221,7 @@ class PreviewPane(QFrame):
                 continue
             shutil.rmtree(path, ignore_errors=True)
 
-    def _on_done(self, generation: int, pages: list):
+    def _on_done(self, generation: int, pages: list, width: int):
         self._busy = False
         if generation != self._generation:
             return
@@ -209,6 +230,11 @@ class PreviewPane(QFrame):
             self._compile_latest()
             return
 
+        self._page_dir = os.path.dirname(pages[0]) if pages else None
+        self._pdf_path = (
+            os.path.join(self._page_dir, "preview.pdf") if self._page_dir else None
+        )
+        self._rendered_width = width
         self._pixmaps = [QPixmap(p) for p in pages]
         self._render_pages()
         self._last_compiled = self._tex
@@ -239,16 +265,46 @@ class PreviewPane(QFrame):
                 widget.deleteLater()
         self._host_layout.addStretch()
 
+    def _target_width(self) -> int:
+        """当前应该按多少像素宽渲染/显示(栏宽 × 缩放)。"""
+        fit_width = max(self._scroll.viewport().width() - 30, MIN_PANE_WIDTH)
+        return max(int(fit_width * self._zoom), 50)
+
     def _render_pages(self):
         self._clear_pages()
-        fit_width = max(self._scroll.viewport().width() - 30, MIN_PANE_WIDTH)
-        width = int(fit_width * self._zoom)
+        target = self._target_width()
         for pixmap in self._pixmaps:
             label = QLabel()
             label.setObjectName("livePage")
             label.setAlignment(Qt.AlignCenter)
-            label.setPixmap(pixmap.scaledToWidth(width, Qt.SmoothTransformation))
+            if pixmap.width() == target:
+                label.setPixmap(pixmap)          # 1:1,最清晰
+            else:
+                label.setPixmap(
+                    pixmap.scaledToWidth(target, Qt.SmoothTransformation)
+                )
             self._host_layout.insertWidget(self._host_layout.count() - 1, label)
+
+        # 尺寸变了: 先缩放顶上,停手后再按目标宽度重渲染(1:1 最清晰)
+        if self._pdf_path and abs(self._rendered_width - target) > 8:
+            self._sharpen_timer.start()
+
+    def _sharpen(self):
+        """按当前显示宽度重新渲染 PDF 页面,消除二次缩放造成的发虚。"""
+        if not self._pdf_path or not self._page_dir:
+            return
+        target = self._target_width()
+        if abs(self._rendered_width - target) <= 8:
+            return
+        try:
+            pages = render_pdf_pages(
+                self._pdf_path, self._page_dir, width_px=target
+            )
+        except Exception:
+            return
+        self._pixmaps = [QPixmap(p) for p in pages]
+        self._rendered_width = target
+        self._render_pages()
 
     def _set_zoom(self, value: float):
         """缩放预览: 1.0 = 适应栏宽;放大后横向滚动查看。"""
@@ -260,7 +316,7 @@ class PreviewPane(QFrame):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if self._pixmaps:
-            QTimer.singleShot(50, self._render_pages)
+            self._scale_timer.start()
 
     def _open_large(self):
         if self._on_open is not None and self._pixmaps:
