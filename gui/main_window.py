@@ -34,7 +34,7 @@ import numpy as np
 from gui import torch_preload  # noqa: F401
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea,
@@ -46,6 +46,12 @@ from gui.exporter import compile_pdf, has_xelatex
 from gui.preview_pane import PreviewPane
 from main import pipeline
 from preprocess.pipeline import load_image
+
+
+def _icon_path() -> str:
+    """项目图标(窗口/快捷方式共用)。"""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, "assets", "board2tex.ico")
 
 
 def _natural_key(path: str):
@@ -74,6 +80,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Board2TeX · 板书转 LaTeX")
+        self.setWindowIcon(QIcon(_icon_path()))
         self.resize(1440, 860)
         self.setMinimumSize(1200, 680)
 
@@ -740,6 +747,7 @@ if __name__ == "__main__":
 
     app = QApplication([])
     app.setApplicationName("Board2TeX")
+    app.setWindowIcon(QIcon(_icon_path()))
     window = MainWindow()
     window.show()
     app.exec_()
