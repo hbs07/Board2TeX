@@ -203,9 +203,9 @@ def test_main_window_constructs_offscreen(monkeypatch) -> None:
     app = QApplication.instance() or QApplication([])
     window = MainWindow()
     try:
-        assert window.image_path is None
+        assert window.image_paths == []
         assert window.doc is None
-        assert window._image_pixmap is None
+        assert window._image_pixmaps == []
         assert window.editor_layout is not None
         assert window.preview_pane is not None
     finally:

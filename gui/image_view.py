@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """gui/image_view.py —— 板书原图查看器(维护: A 胡秉善)
 
-主界面不再常驻原图,改成一个弹窗:需要对照时点「查看原图」,
-默认适应窗口大小,可放大到 400% 看细节。
+主界面不再常驻原图,改成一个弹窗:需要对照时点「查看原图」。
+支持多张(多选导入时)左右切换,可缩放/适应窗口;按屏幕 DPR 渲染,不发糊。
 
 AI 辅助说明: 见 README「诚信声明」。
 """
@@ -23,23 +23,41 @@ MAX_SCALE = 4.0
 
 
 class ImageDialog(QDialog):
-    """可缩放的原图查看窗口。"""
+    """可缩放的原图查看窗口(支持多张切换)。"""
 
-    def __init__(self, parent, pixmap: QPixmap, title: str = "板书原图"):
+    def __init__(self, parent, images, titles=None, start: int = 0):
         super().__init__(parent)
-        self.setWindowTitle(title)
-        self.resize(980, 760)
-        self._pixmap = pixmap
+        if isinstance(images, QPixmap):        # 兼容只传一张的旧用法
+            images = [images]
+        self._images: list[QPixmap] = list(images)
+        self._titles: list[str] = list(titles) if titles else [
+            f"第 {i + 1} 张" for i in range(len(self._images))
+        ]
+        self._index = max(0, min(start, len(self._images) - 1))
         self._dpr = float(self.devicePixelRatioF() or 1.0)
         self._scale = 1.0
+        self._pixmap = self._images[self._index]
+
+        self.resize(980, 760)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 12)
         layout.setSpacing(8)
 
         head = QHBoxLayout()
-        info = QLabel(f"{pixmap.width()} × {pixmap.height()} px")
-        info.setObjectName("previewInfo")
+        self._info = QLabel()
+        self._info.setObjectName("previewInfo")
+
+        self._prev_btn = QPushButton("‹")
+        self._next_btn = QPushButton("›")
+        for btn, tip in ((self._prev_btn, "上一张"), (self._next_btn, "下一张")):
+            btn.setObjectName("zoomBtn")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(tip)
+            btn.setFixedWidth(30)
+        self._prev_btn.clicked.connect(lambda: self._step(-1))
+        self._next_btn.clicked.connect(lambda: self._step(1))
+
         self._zoom_label = QLabel("100%")
         self._zoom_label.setObjectName("zoomLabel")
 
@@ -57,10 +75,14 @@ class ImageDialog(QDialog):
 
         fit_btn = QPushButton("适应窗口")
         fit_btn.setCursor(Qt.PointingHandCursor)
-        fit_btn.setToolTip("按窗口大小完整显示(不放大)")
+        fit_btn.setToolTip("按窗口大小完整显示")
         fit_btn.clicked.connect(self._fit_to_window)
 
-        head.addWidget(info)
+        head.addWidget(self._info)
+        if len(self._images) > 1:
+            head.addSpacing(8)
+            head.addWidget(self._prev_btn)
+            head.addWidget(self._next_btn)
         head.addStretch()
         head.addWidget(zoom_out)
         head.addWidget(self._zoom_label)
@@ -88,8 +110,28 @@ class ImageDialog(QDialog):
         self._scroll.setWidget(self._host)
         layout.addWidget(self._scroll, 1)
 
-        self._scale = min(1.0, (900 * self._dpr) / max(pixmap.width(), 1))
+        self._show_index(self._index)
+
+    # -------------------------------------------------------------- 内部
+    def _show_index(self, index: int) -> None:
+        self._index = max(0, min(index, len(self._images) - 1))
+        self._pixmap = self._images[self._index]
+        title = self._titles[self._index] if self._index < len(self._titles) else ""
+        self.setWindowTitle(f"板书原图 · {title}")
+        self._info.setText(
+            f"{self._index + 1} / {len(self._images)} · "
+            f"{self._pixmap.width()} × {self._pixmap.height()} px"
+        )
+        if len(self._images) > 1:
+            self._prev_btn.setEnabled(self._index > 0)
+            self._next_btn.setEnabled(self._index < len(self._images) - 1)
+
+        # 换图时重新按"适应宽度"的比例显示
+        self._scale = min(1.0, (900 * self._dpr) / max(self._pixmap.width(), 1))
         self._render()
+
+    def _step(self, delta: int) -> None:
+        self._show_index(self._index + delta)
 
     def _set_scale(self, value: float) -> None:
         self._scale = max(MIN_SCALE, min(MAX_SCALE, value))
@@ -117,6 +159,7 @@ class ImageDialog(QDialog):
         self._zoom_label.setText(f"{self._scale * 100:.0f}%")
 
 
-def show_image_dialog(parent, pixmap: QPixmap, title: str = "板书原图") -> None:
-    dialog = ImageDialog(parent, pixmap, title)
+def show_image_dialog(parent, images, titles=None) -> None:
+    """images: 单个 QPixmap 或 QPixmap 列表。"""
+    dialog = ImageDialog(parent, images, titles)
     dialog.exec_()

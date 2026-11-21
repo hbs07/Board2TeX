@@ -24,7 +24,7 @@ import os
 import numpy as np
 import pytest
 
-from compose.builder import build_body, compose_document
+from compose.builder import build_body, compose_document, merge_documents
 from config import MAX_SIDE
 from layout.pipeline import analyze_layout
 from main import pipeline
@@ -154,6 +154,26 @@ def test_compose_document_returns_blocks_and_tex_source(monkeypatch) -> None:
 
 def test_build_body_returns_string() -> None:
     assert isinstance(build_body([]), str)
+
+
+def test_merge_documents_orders_and_page_breaks() -> None:
+    """多张图合并: order 连续重编号,非空页之间插一张 \\newpage。"""
+    def make_doc(n: int) -> dict:
+        return {
+            "blocks": [
+                {"order": i, "type": "text", "content": f"t{i}",
+                 "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+                for i in range(n)
+            ],
+            "tex_source": "",
+        }
+
+    merged, sizes = merge_documents([make_doc(2), make_doc(1), make_doc(0)])
+
+    assert sizes == [2, 1, 0], "每张图贡献的 Block 数要保留(含 0)"
+    assert [b["order"] for b in merged["blocks"]] == [0, 1, 2]
+    assert merged["tex_source"].count("\\newpage") == 1, "两个非空页之间应只有一个分页符"
+    assert r"\begin{document}" in merged["tex_source"]
 
 
 # ---------------------------------------------------------------- 识别(C)

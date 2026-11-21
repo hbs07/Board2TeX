@@ -181,6 +181,12 @@ QLabel#confLabel[risky="true"] {{
     color: {COLORS["danger"]};
     font-weight: 700;
 }}
+QLabel#pageHeader {{
+    color: #475569;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 8px 2px 2px 2px;
+}}
 QLineEdit#blockEdit {{
     background: #FFFFFF;
     border: 1px solid {COLORS["border"]};

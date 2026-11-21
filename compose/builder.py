@@ -96,6 +96,34 @@ def compose_document(regions: list[dict]) -> dict:
     }
 
 
+def merge_documents(docs: list[dict]) -> tuple[dict, list[int]]:
+    """多张板书的 Document 合并成一份: 顺序拼接,每张之间 \\newpage。
+
+    返回 (merged, page_sizes):
+      merged     : 合并后的 Document(blocks 的 order 已重新连续编号);
+      page_sizes : 每张图贡献多少 Block,GUI 用它画分页标题/重建 tex。
+
+    空文档(没识别到行)会保留一个 0,保证页码与导入顺序一一对应。
+    """
+    blocks: list[dict] = []
+    bodies: list[str] = []
+    page_sizes: list[int] = []
+
+    for doc in docs:
+        page_blocks = sorted(doc.get("blocks", []), key=lambda b: b["order"])
+        if not page_blocks:
+            page_sizes.append(0)
+            continue
+        offset = len(blocks)
+        page_blocks = [dict(b, order=b["order"] + offset) for b in page_blocks]
+        blocks.extend(page_blocks)
+        bodies.append(build_body(page_blocks))
+        page_sizes.append(len(page_blocks))
+
+    body = "\n\n\\newpage\n\n".join(b for b in bodies if b.strip())
+    return {"blocks": blocks, "tex_source": TEMPLATE.replace("% BODY", body)}, page_sizes
+
+
 if __name__ == "__main__":
     import os
     import shutil

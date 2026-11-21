@@ -26,6 +26,7 @@ AI 辅助说明: 见 README「诚信声明」。
 from __future__ import annotations
 
 import os
+import re
 
 import numpy as np
 
@@ -45,6 +46,12 @@ from gui.exporter import compile_pdf, has_xelatex
 from gui.preview_pane import PreviewPane
 from main import pipeline
 from preprocess.pipeline import load_image
+
+
+def _natural_key(path: str):
+    """按文件名自然排序: board_2 排在 board_10 前面(Windows 多选顺序不可靠)。"""
+    name = os.path.basename(path).lower()
+    return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", name)]
 
 
 def ndarray_to_qpixmap(img):
@@ -71,13 +78,14 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1200, 680)
 
         # ---- 识别结果状态(冻结接口的数据在这里流转) ----
-        self.image_path: str | None = None
-        self.pre: dict | None = None       # {"binary", "bgr"}
-        self.regions: list[dict] = []      # layout 输出
-        self.doc: dict | None = None       # {"blocks", "tex_source"}
+        self.image_paths: list[str] = []   # 导入的多张板书(已按文件名排序)
+        self.pre: dict | None = None       # 第一张的 {"binary", "bgr"}
+        self.regions: list[dict] = []      # 所有图的 layout 输出(合并)
+        self.doc: dict | None = None       # 合并后的 {"blocks", "tex_source"}
+        self._page_sizes: list[int] = []   # 每张图贡献多少 Block(分页依据)
         self.block_edits: dict[int, QLineEdit] = {}   # order -> 编辑框
         self._db = None                    # 错题本连接(懒加载)
-        self._image_pixmap = None          # 原图 QPixmap(窗口缩放时重新适配)
+        self._image_pixmaps: list[QPixmap] = []       # 原图,供「查看原图」使用
 
         self._build_ui()
 
@@ -223,7 +231,28 @@ class MainWindow(QMainWindow):
             self.editor_layout.addWidget(hint)
             return
 
+        # 计算"每张图第一行"的 order,用于插分页标题
+        blocks = self.doc["blocks"]
+        sizes = self._page_sizes or ([len(blocks)] if blocks else [])
+        self._page_headers: dict[int, int] = {}
+        acc = 0
+        for idx, size in enumerate(sizes):
+            if size > 0:
+                self._page_headers[acc] = idx
+            acc += size
+
         for b in self.doc["blocks"]:
+            # 每张图的第一行前插一条分页标题(多图时用来区分第几张)
+            if b["order"] in self._page_headers:
+                page_idx = self._page_headers[b["order"]]
+                name = (
+                    os.path.basename(self.image_paths[page_idx])
+                    if page_idx < len(self.image_paths) else ""
+                )
+                header = QLabel(f"第 {page_idx + 1} 张 · {name}")
+                header.setObjectName("pageHeader")
+                self.editor_layout.addWidget(header)
+
             order = b["order"]
             conf = float(b["confidence"])
 
@@ -291,6 +320,7 @@ class MainWindow(QMainWindow):
             item = self.editor_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.setParent(None)     # 先从界面摘掉,避免和新建的行重叠
                 widget.deleteLater()
         self.block_edits.clear()
 
@@ -306,13 +336,25 @@ class MainWindow(QMainWindow):
         self.preview_pane.schedule(self.doc["tex_source"])
 
     def _rebuild_tex(self):
-        """用当前(可能已被人工修改的)blocks 重建 tex_source。"""
+        """用当前(可能已被人工修改的)blocks 重建 tex_source。
+
+        多张图时按 _page_sizes 分段: 每张一段,段间插 \\newpage。
+        """
         if not self.doc:
             return
         from compose.builder import build_body
         from compose.template import TEMPLATE
 
-        body = build_body(self.doc["blocks"])
+        blocks = self.doc["blocks"]
+        sizes = self._page_sizes or ([len(blocks)] if blocks else [])
+        pages: list[str] = []
+        start = 0
+        for size in sizes:
+            part = blocks[start:start + size]
+            start += size
+            if part:
+                pages.append(build_body(part))
+        body = "\n\n\\newpage\n\n".join(p for p in pages if p.strip())
         self.doc["tex_source"] = TEMPLATE.replace("% BODY", body)
 
     def _get_db(self):
@@ -334,60 +376,93 @@ class MainWindow(QMainWindow):
     # 按钮槽函数
     # ------------------------------------------------------------------
     def on_import(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "选择板书照片", "", "Images (*.png *.jpg *.jpeg *.bmp)"
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "选择板书照片(可多选)", "",
+            "Images (*.png *.jpg *.jpeg *.bmp)"
         )
-        if not path:
+        if not paths:
             return
-        self.image_path = path
+
+        # 多选返回顺序不保证按文件名;按自然序排(第2张排在第10张前面)
+        paths = sorted(paths, key=_natural_key)
+        self.image_paths = paths
 
         # 换图后旧结果全部作废,避免"图是新的、编辑区还是上一张"的错位
         self.pre = None
         self.regions = []
         self.doc = None
+        self._page_sizes = []
         self.show_blocks()
         self.preview_pane.clear()
         self.right_title.setText("识别结果 · 可直接编辑")
 
         # 原图只在弹窗里看,这里保存 QPixmap 供「查看原图」使用
-        self._image_pixmap = ndarray_to_qpixmap(load_image(path))
+        self._image_pixmaps = []
+        for path in paths:
+            try:
+                self._image_pixmaps.append(ndarray_to_qpixmap(load_image(path)))
+            except Exception:
+                continue
         self.statusBar().showMessage(
-            f"已导入: {os.path.basename(path)}(可点「查看原图」)"
+            f"已导入 {len(paths)} 张(可点「查看原图」);正在识别…"
         )
         self.on_run()          # 导入即识别,少点一次按钮
 
     def on_view_image(self):
-        if self._image_pixmap is None:
+        if not self._image_pixmaps:
             QMessageBox.information(self, "提示", "请先导入图片")
             return
         from gui.image_view import show_image_dialog
 
-        title = f"板书原图 · {os.path.basename(self.image_path or '')}"
-        show_image_dialog(self, self._image_pixmap, title)
+        titles = [os.path.basename(p) for p in self.image_paths]
+        show_image_dialog(self, self._image_pixmaps, titles)
 
     def on_run(self):
-        if not self.image_path:
+        if not self.image_paths:
             QMessageBox.information(self, "提示", "请先导入图片")
             return
+
+        total = len(self.image_paths)
+        docs: list[dict] = []
+        pres: list[dict] = []
+        regions_all: list[dict] = []
+
         self.setEnabled(False)  # 同步版:识别期间界面禁点,CPU 推理需几秒~几十秒
-        self.statusBar().showMessage("正在识别…(首次会加载模型,请稍候)")
-        QApplication.processEvents()
         try:
-            self.pre, self.regions, self.doc = pipeline(self.image_path)
-        except Exception as exc:                # 识别失败不能把窗口卡死
-            QMessageBox.critical(
-                self, "识别失败", f"{type(exc).__name__}: {exc}"
-            )
-            return
+            for index, path in enumerate(self.image_paths, 1):
+                self.statusBar().showMessage(
+                    f"正在识别 {index}/{total}: {os.path.basename(path)}"
+                    f"(首次会加载模型,请稍候)"
+                )
+                QApplication.processEvents()
+                try:
+                    pre, regions, doc = pipeline(path)
+                except Exception as exc:        # 识别失败要说清是哪张图
+                    QMessageBox.critical(
+                        self, "识别失败",
+                        f"{os.path.basename(path)}\n{type(exc).__name__}: {exc}",
+                    )
+                    return
+                pres.append(pre)
+                regions_all.extend(regions)
+                docs.append(doc)
         finally:
             self.setEnabled(True)
+
+        from compose.builder import merge_documents
+
+        self.pre = pres[0] if pres else None
+        self.regions = regions_all
+        self.doc, self._page_sizes = merge_documents(docs)
+
         self.show_blocks()
         n_formula = sum(1 for b in self.doc["blocks"] if b["type"] == "formula")
         self.right_title.setText(
-            f"识别结果 · {len(self.doc['blocks'])} 行(公式 {n_formula})"
+            f"识别结果 · {len(self.doc['blocks'])} 行"
+            f"(公式 {n_formula},共 {total} 张)"
         )
         self.statusBar().showMessage(
-            f"识别完成: {len(self.doc['blocks'])} 块,右侧可直接修改"
+            f"识别完成: {total} 张 / {len(self.doc['blocks'])} 块,可直接修改"
         )
         self.preview_pane.compile_now(self.doc["tex_source"])
 
@@ -466,7 +541,7 @@ class MainWindow(QMainWindow):
             from vault.db import add_problem
 
             add_problem(self._get_db(), course.strip(), tags,
-                        self.doc["tex_source"], self.image_path or "")
+                        self.doc["tex_source"], ";".join(self.image_paths))
         except Exception as exc:                    # 数据库异常不能弄崩界面
             QMessageBox.critical(self, "保存失败", str(exc))
             return
