@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """vault/db.py —— SQLite 错题本(主责: D 李若宸;骨架: A 提供)
 
-验证命令(先按《分工_D_应用与评估.md》§3.3 写好 tests/test_vault.py 再跑):
-    pytest tests/test_vault.py -v
-期望结果: 3 个测试全绿(增/查/按课程搜)。
+验证命令(已实现,单测在 tests/test_acceptance.py):
+    python -m pytest -q -k vault
+期望结果: 增/查/按课程筛选/删除 全部通过。
 
 AI 辅助说明: 见 README「诚信声明」。
 
@@ -29,36 +29,58 @@ import sqlite3
 def init_db(path: str = "vault/board2tex.db") -> sqlite3.Connection:
     """连接(必要时创建)SQLite 库并建表,返回连接对象。
 
-    要点: CREATE TABLE IF NOT EXISTS 保证重复调用不报错。
-    参考实现:《分工_D_应用与评估.md》§3.1。
+    CREATE TABLE IF NOT EXISTS 保证重复调用不报错。
     """
-    # TODO(D): 参考文档 §3.1 实现(约 7 行)
-    raise NotImplementedError("vault.init_db 待 D 实现")
+    con = sqlite3.connect(path)
+    con.execute(
+        """
+        CREATE TABLE IF NOT EXISTS problems (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            course     TEXT NOT NULL,
+            tags       TEXT NOT NULL DEFAULT '',
+            tex        TEXT NOT NULL,
+            image_path TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    con.commit()
+    return con
 
 
 def add_problem(con: sqlite3.Connection, course: str, tags: list[str],
                 tex: str, image_path: str) -> None:
-    """插入一条错题记录。tags 是列表,入库前 join(",")。
-
-    参考实现: 文档 §3.2 的 add_problem(created_at 用 datetime('now'))。
-    """
-    # TODO(D): 参考文档 §3.2 实现(约 4 行)
-    raise NotImplementedError("vault.add_problem 待 D 实现")
+    """插入一条错题记录。tags 是列表,入库前 join(",")。"""
+    con.execute(
+        "INSERT INTO problems (course, tags, tex, image_path) VALUES (?, ?, ?, ?)",
+        (course, ",".join(tags), tex, image_path),
+    )
+    con.commit()
 
 
 def list_problems(con: sqlite3.Connection) -> list[tuple]:
-    """返回全部记录,按 id 倒序(最新的在前)。参考实现: 文档 §3.2。"""
-    # TODO(D): 参考文档 §3.2 实现(1 行)
-    raise NotImplementedError("vault.list_problems 待 D 实现")
+    """返回全部记录,按 id 倒序(最新的在前)。
+
+    列序固定: (id, course, tags, tex, image_path, created_at)。
+    """
+    return con.execute(
+        "SELECT id, course, tags, tex, image_path, created_at "
+        "FROM problems ORDER BY id DESC"
+    ).fetchall()
 
 
 def search(con: sqlite3.Connection, course: str | None = None) -> list[tuple]:
-    """按课程筛选;course 为 None 时等价于 list_problems。参考实现: 文档 §3.2。"""
-    # TODO(D): 参考文档 §3.2 实现(约 4 行)
-    raise NotImplementedError("vault.search 待 D 实现")
+    """按课程筛选;course 为 None 时等价于 list_problems。"""
+    if course is None:
+        return list_problems(con)
+    return con.execute(
+        "SELECT id, course, tags, tex, image_path, created_at "
+        "FROM problems WHERE course = ? ORDER BY id DESC",
+        (course,),
+    ).fetchall()
 
 
 def delete_problem(con: sqlite3.Connection, pid: int) -> None:
-    """按 id 删除记录。参考实现: 文档 §3.2。"""
-    # TODO(D): 参考文档 §3.2 实现(约 3 行)
-    raise NotImplementedError("vault.delete_problem 待 D 实现")
+    """按 id 删除记录。"""
+    con.execute("DELETE FROM problems WHERE id = ?", (pid,))
+    con.commit()
