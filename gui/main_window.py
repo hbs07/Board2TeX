@@ -42,9 +42,9 @@ except Exception:          # 没装 torch 或 DLL 加载失败:文字识别仍�
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QTextEdit,
-    QVBoxLayout, QWidget,
+    QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout, QInputDialog,
+    QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea,
+    QTextEdit, QVBoxLayout, QWidget,
 )
 
 from config import TEXT_CONF_THRESHOLD
@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Board2TeX · 板书转 LaTeX")
         self.resize(1100, 680)
+        self.setMinimumSize(1000, 620)
 
         # ---- 识别结果状态(冻结接口的数据在这里流转) ----
         self.image_path: str | None = None
@@ -90,49 +91,139 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _build_ui(self):
         central = QWidget()
+        central.setObjectName("root")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
+        root.setContentsMargins(22, 16, 22, 10)
+        root.setSpacing(14)
 
-        # 顶部按钮行
+        # ---- 顶部标题区 ----
+        header = QHBoxLayout()
+        header.setSpacing(8)
+
+        title = QLabel("Board2TeX")
+        title.setObjectName("appTitle")
+        badge = QLabel("MVP")
+        badge.setObjectName("badge")
+        subtitle = QLabel("板书照片 → 可编译 LaTeX")
+        subtitle.setObjectName("appSubtitle")
+
+        header.addWidget(title)
+        header.addWidget(badge)
+        header.addSpacing(10)
+        header.addWidget(subtitle)
+        header.addStretch()
+        root.addLayout(header)
+
+        # ---- 按钮行 ----
+        # 每种按钮的"角色": primary=主操作, accent=次强调, 空=普通
         btn_row = QHBoxLayout()
-        for text, slot in [
-            ("导入图片", self.on_import),
-            ("运行识别", self.on_run),
-            ("预览", self.on_preview),
-            ("导出 .tex", self.on_export_tex),
-            ("导出 PDF", self.on_export_pdf),
-            ("存入错题本", self.on_save_problem),
-            ("错题本", self.on_show_vault),
+        btn_row.setSpacing(8)
+        for text, slot, role, tip in [
+            ("导入图片", self.on_import, "", "选择一张板书照片(png / jpg / bmp)"),
+            ("运行识别", self.on_run, "primary", "预处理 → 切行 → 识别 → 合成;首次会加载模型"),
+            ("预览", self.on_preview, "", "查看当前编辑后的正文"),
+            ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
+            ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
+            ("存入错题本", self.on_save_problem, "", "把当前整篇 LaTeX 存入 SQLite 错题本"),
+            ("错题本", self.on_show_vault, "", "查看 / 删除已保存的错题"),
         ]:
             btn = QPushButton(text)
+            if role:
+                btn.setProperty("class", role)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(tip)
             btn.clicked.connect(slot)
             btn_row.addWidget(btn)
+        btn_row.addStretch()
         root.addLayout(btn_row)
 
-        # 左:图像显示区
+        # ---- 左卡片: 图像显示区 ----
+        left_card = QFrame()
+        left_card.setObjectName("card")
+        left_layout = QVBoxLayout(left_card)
+        left_layout.setContentsMargins(14, 12, 14, 14)
+        left_layout.setSpacing(8)
+
+        left_title = QLabel("板书预览")
+        left_title.setObjectName("cardTitle")
+        self.left_title = left_title
+        left_layout.addWidget(left_title)
+
         self.image_label = QLabel("先点「导入图片」,再「运行识别」")
+        self.image_label.setObjectName("imageCanvas")
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setMinimumSize(560, 420)
-        self.image_label.setStyleSheet(
-            "border: 1px solid #cccccc; background: #fafafa;"
-        )
-        # 右:编辑区(D 在 self.editor_layout 里加可编辑行)
+        self.image_label.setMinimumSize(520, 400)
+        left_layout.addWidget(self.image_label, 1)
+
+        # ---- 右卡片: 编辑区 ----
+        right_card = QFrame()
+        right_card.setObjectName("card")
+        right_layout = QVBoxLayout(right_card)
+        right_layout.setContentsMargins(14, 12, 14, 14)
+        right_layout.setSpacing(8)
+
+        right_title = QLabel("识别结果 · 可直接编辑")
+        right_title.setObjectName("cardTitle")
+        self.right_title = right_title
+        right_layout.addWidget(right_title)
+
         self.editor_area = QScrollArea()
+        self.editor_area.setObjectName("editorScroll")
         self.editor_area.setWidgetResizable(True)
+        self.editor_area.setFrameShape(QFrame.NoFrame)
+
         editor_host = QWidget()
+        editor_host.setObjectName("editorHost")
         self.editor_layout = QVBoxLayout(editor_host)
+        self.editor_layout.setContentsMargins(0, 0, 6, 0)
+        self.editor_layout.setSpacing(8)
         self.editor_layout.setAlignment(Qt.AlignTop)
-        self._editor_hint = QLabel("识别结果会显示在这里,可直接改每一行的 LaTeX")
+
+        self._editor_hint = QLabel(
+            "识别结果会显示在这里,一行一个输入框。\n改完直接「预览」或「导出」。"
+        )
+        self._editor_hint.setObjectName("legend")
         self._editor_hint.setWordWrap(True)
         self.editor_layout.addWidget(self._editor_hint)
         self.editor_area.setWidget(editor_host)
+        right_layout.addWidget(self.editor_area, 1)
 
         content_row = QHBoxLayout()
-        content_row.addWidget(self.image_label, 3)
-        content_row.addWidget(self.editor_area, 2)
-        root.addLayout(content_row)
+        content_row.setSpacing(14)
+        content_row.addWidget(left_card, 3)
+        content_row.addWidget(right_card, 2)
+        root.addLayout(content_row, 1)
+
+        self._add_card_shadow(left_card)
+        self._add_card_shadow(right_card)
 
         self.statusBar().showMessage("就绪")
+
+        # 状态栏右侧常驻: 本机能不能编 PDF,一眼就能看到
+        tex_ok = has_xelatex()
+        tex_status = QLabel("xelatex 已就绪" if tex_ok else "未检测到 xelatex(只能导出 .tex)")
+        tex_status.setObjectName("statusBadge")
+        self.statusBar().addPermanentWidget(tex_status)
+
+        # 主题必须在控件建好之后、显示之前应用(属性选择器依赖 setProperty)
+        from gui.style import apply_theme
+
+        app = QApplication.instance()
+        if app is not None:
+            apply_theme(app)
+
+    @staticmethod
+    def _add_card_shadow(card: QFrame) -> None:
+        """给卡片加一层很淡的投影,让白色卡片从背景里"浮"起来。"""
+        from PyQt5.QtGui import QColor
+        from PyQt5.QtWidgets import QGraphicsDropShadowEffect
+
+        effect = QGraphicsDropShadowEffect(card)
+        effect.setBlurRadius(26)
+        effect.setOffset(0, 5)
+        effect.setColor(QColor(15, 23, 42, 26))
+        card.setGraphicsEffect(effect)
 
     # ------------------------------------------------------------------
     # 图像上屏(A)
@@ -144,6 +235,11 @@ class MainWindow(QMainWindow):
             Qt.SmoothTransformation,
         )
         self.image_label.setPixmap(scaled)
+        # 有图之后去掉虚线占位框(样式见 gui/style.py 的 [filled="true"])
+        if self.image_label.property("filled") != "true":
+            self.image_label.setProperty("filled", "true")
+            self.image_label.style().unpolish(self.image_label)
+            self.image_label.style().polish(self.image_label)
         if note:
             self.statusBar().showMessage(note)
 
@@ -179,34 +275,50 @@ class MainWindow(QMainWindow):
                 risky = 0.0 < conf < TEXT_CONF_THRESHOLD
                 tip = f"文字: 置信度 {conf:.2f} < {TEXT_CONF_THRESHOLD},建议核对"
 
-            row = QWidget()
+            row = QFrame()
+            row.setObjectName("blockRow")
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setContentsMargins(10, 8, 10, 8)
+            row_layout.setSpacing(8)
 
-            tag = QLabel(f'{order} [{b["type"]}] {conf:.2f}')
-            tag.setMinimumWidth(120)
-            if risky:
-                tag.setStyleSheet("color: #c0392b;")
-                tag.setToolTip(tip)
+            order_label = QLabel(f"#{order}")
+            order_label.setObjectName("orderLabel")
+            order_label.setFixedWidth(28)
+
+            chip = QLabel("FORMULA" if b["type"] == "formula" else "TEXT")
+            chip.setObjectName(
+                "chipFormula" if b["type"] == "formula" else "chipText"
+            )
+            chip.setAlignment(Qt.AlignCenter)
+            chip.setFixedWidth(64)
+
+            conf_label = QLabel(f"{conf:.2f}")
+            conf_label.setObjectName("confLabel")
+            conf_label.setProperty("risky", "true" if risky else "false")
+            conf_label.setFixedWidth(36)
+            conf_label.setToolTip(tip if risky else "置信度")
 
             edit = QLineEdit(b["latex"])
+            edit.setObjectName("blockEdit")
             edit.setPlaceholderText("(空)")
             edit.setCursorPosition(0)          # 默认滚到末尾会看不到行首,拉回开头
+            edit.setProperty("risky", "true" if risky else "false")
             if risky:
-                edit.setStyleSheet("border: 1px solid #c0392b;")
                 edit.setToolTip(tip)
             edit.textChanged.connect(
                 lambda text, o=order: self._on_block_edited(o, text)
             )
 
-            row_layout.addWidget(tag)
+            row_layout.addWidget(order_label)
+            row_layout.addWidget(chip)
+            row_layout.addWidget(conf_label)
             row_layout.addWidget(edit, 1)
             self.editor_layout.addWidget(row)
             self.block_edits[order] = edit
 
         legend = QLabel("红框 = 建议人工核对:文字看置信度(<0.85),公式看括号是否配对")
+        legend.setObjectName("legend")
         legend.setWordWrap(True)
-        legend.setStyleSheet("color: #888888; padding-top: 6px;")
         self.editor_layout.addWidget(legend)
 
     def _on_block_edited(self, order: int, text: str):
@@ -253,6 +365,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         self.image_path = path
+        self.left_title.setText(f"板书预览 · {os.path.basename(path)}")
         self._show_image(load_image(path), f"已导入: {os.path.basename(path)}")
 
     def on_run(self):
@@ -270,6 +383,10 @@ class MainWindow(QMainWindow):
             f"识别完成: {len(self.regions)} 个区域, {len(self.doc['blocks'])} 个块",
         )
         self.show_blocks()
+        n_formula = sum(1 for b in self.doc["blocks"] if b["type"] == "formula")
+        self.right_title.setText(
+            f"识别结果 · {len(self.doc['blocks'])} 行(公式 {n_formula})"
+        )
         self.statusBar().showMessage(
             f"识别完成: {len(self.doc['blocks'])} 块,右侧可直接修改"
         )
@@ -401,7 +518,12 @@ class MainWindow(QMainWindow):
 
 
 if __name__ == "__main__":
+    # 高 DPI 缩放: 笔记本 125%/150% 缩放时字体和控件不再模糊
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     app = QApplication([])
+    app.setApplicationName("Board2TeX")
     window = MainWindow()
     window.show()
     app.exec_()
