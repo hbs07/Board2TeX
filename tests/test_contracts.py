@@ -192,6 +192,28 @@ def test_reorder_pages_renumbers_blocks() -> None:
     assert [b["content"] for b in new_blocks] == ["t2", "t0", "t1"]
 
 
+def test_append_documents_keeps_existing_blocks() -> None:
+    """追加导入: 已有 blocks 原样保留(含手工改动),新页接在末尾。"""
+    from compose.builder import append_documents
+
+    existing = [
+        {"order": i, "type": "text", "content": f"t{i}",
+         "latex": f"edited{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+        for i in range(2)
+    ]
+    new_doc = {
+        "blocks": [{"order": 0, "type": "text", "content": "t2",
+                    "latex": "t2", "confidence": 0.9, "bbox": (0, 0, 1, 1)}],
+        "tex_source": "",
+    }
+    blocks, sizes = append_documents(existing, [2], [new_doc])
+
+    assert sizes == [2, 1]
+    assert [b["order"] for b in blocks] == [0, 1, 2]
+    assert blocks[0]["latex"] == "edited0", "已有内容不能被覆盖"
+    assert blocks[2]["content"] == "t2"
+
+
 # ---------------------------------------------------------------- 识别(C)
 
 

@@ -148,6 +148,23 @@ def reorder_pages(blocks: list[dict], page_sizes: list[int],
     return new_blocks, new_sizes
 
 
+def append_documents(blocks: list[dict], page_sizes: list[int],
+                     docs: list[dict]) -> tuple[list[dict], list[int]]:
+    """在现有合并结果末尾追加新识别的几张板书(保留已编辑的内容)。
+
+    与 merge_documents 的区别: 不重建前面的 blocks,只给新页接上连续 order,
+    所以用户之前改过的行不会被覆盖。
+    """
+    new_blocks = list(blocks)
+    new_sizes = list(page_sizes)
+    for doc in docs:
+        page = sorted(doc.get("blocks", []), key=lambda b: b["order"])
+        offset = len(new_blocks)
+        new_blocks.extend(dict(b, order=offset + i) for i, b in enumerate(page))
+        new_sizes.append(len(page))
+    return new_blocks, new_sizes
+
+
 if __name__ == "__main__":
     import os
     import shutil

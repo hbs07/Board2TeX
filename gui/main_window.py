@@ -123,7 +123,8 @@ class MainWindow(QMainWindow):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         for text, slot, role, tip in [
-            ("导入图片", self.on_import, "", "选择一张或多张板书照片(png / jpg / bmp)"),
+            ("导入图片", self.on_import, "", "重新导入(替换当前所有图片与结果)"),
+            ("追加图片", self.on_add_images, "", "在现有板书后面继续添加,只识别新图片"),
             ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
             ("调整顺序", self.on_reorder_images, "", "调整多张板书的合并顺序"),
             ("运行识别", self.on_run, "primary", "预处理 → 切行 → 识别 → 合成;首次会加载模型"),
@@ -399,15 +400,70 @@ class MainWindow(QMainWindow):
 
         # 原图只在弹窗里看,这里保存 QPixmap 供「查看原图」使用
         self._image_pixmaps = []
+        self._load_pixmaps(paths)
+        self.statusBar().showMessage(
+            f"已导入 {len(paths)} 张(可点「查看原图」);正在识别…"
+        )
+        self.on_run()          # 导入即识别,少点一次按钮
+
+    def _load_pixmaps(self, paths: list[str]) -> None:
         for path in paths:
             try:
                 self._image_pixmaps.append(ndarray_to_qpixmap(load_image(path)))
             except Exception:
                 self._image_pixmaps.append(QPixmap())   # 坏图占位,保证索引对齐
-        self.statusBar().showMessage(
-            f"已导入 {len(paths)} 张(可点「查看原图」);正在识别…"
+
+    def on_add_images(self):
+        """追加导入: 只识别新图片,已有内容(含手工修改)保持不变。"""
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "追加板书照片(可多选)", "",
+            "Images (*.png *.jpg *.jpeg *.bmp)"
         )
-        self.on_run()          # 导入即识别,少点一次按钮
+        if not paths:
+            return
+        new_paths = sorted(paths, key=_natural_key)
+
+        if not self.image_paths:       # 还没有任何图: 等同于首次导入
+            self.image_paths = new_paths
+            self._load_pixmaps(new_paths)
+            self.doc = None
+            self._page_sizes = []
+            self.show_blocks()
+            self.preview_pane.clear()
+            self.on_run()
+            return
+
+        before = len(self.image_paths)
+        self.image_paths.extend(new_paths)
+        self._load_pixmaps(new_paths)
+
+        result = self._recognize_paths(new_paths)
+        if result is None:             # 失败则回滚,保持状态一致
+            del self.image_paths[before:]
+            del self._image_pixmaps[before:]
+            return
+
+        _pres, regions_all, docs = result
+        self.regions.extend(regions_all)
+
+        if self.doc is None:
+            from compose.builder import merge_documents
+
+            self.doc, self._page_sizes = merge_documents(docs)
+        else:
+            from compose.builder import append_documents
+
+            self.doc["blocks"], self._page_sizes = append_documents(
+                self.doc["blocks"], self._page_sizes, docs
+            )
+
+        self._rebuild_tex()
+        self.show_blocks()
+        self._update_result_title()
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self.statusBar().showMessage(
+            f"已追加 {len(new_paths)} 张,共 {len(self.image_paths)} 张"
+        )
 
     def on_reorder_images(self):
         if len(self.image_paths) < 2:
@@ -460,14 +516,35 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "提示", "请先导入图片")
             return
 
-        total = len(self.image_paths)
+        result = self._recognize_paths(self.image_paths)
+        if result is None:
+            return
+        pres, regions_all, docs = result
+
+        from compose.builder import merge_documents
+
+        self.pre = pres[0] if pres else None
+        self.regions = regions_all
+        self.doc, self._page_sizes = merge_documents(docs)
+
+        self.show_blocks()
+        self._update_result_title()
+        self.statusBar().showMessage(
+            f"识别完成: {len(self.image_paths)} 张 / "
+            f"{len(self.doc['blocks'])} 块,可直接修改"
+        )
+        self.preview_pane.compile_now(self.doc["tex_source"])
+
+    def _recognize_paths(self, paths: list[str]):
+        """逐张跑 pipeline,返回 (pres, regions, docs);任一张失败返回 None。"""
+        total = len(paths)
         docs: list[dict] = []
         pres: list[dict] = []
         regions_all: list[dict] = []
 
         self.setEnabled(False)  # 同步版:识别期间界面禁点,CPU 推理需几秒~几十秒
         try:
-            for index, path in enumerate(self.image_paths, 1):
+            for index, path in enumerate(paths, 1):
                 self.statusBar().showMessage(
                     f"正在识别 {index}/{total}: {os.path.basename(path)}"
                     f"(首次会加载模型,请稍候)"
@@ -480,29 +557,21 @@ class MainWindow(QMainWindow):
                         self, "识别失败",
                         f"{os.path.basename(path)}\n{type(exc).__name__}: {exc}",
                     )
-                    return
+                    return None
                 pres.append(pre)
                 regions_all.extend(regions)
                 docs.append(doc)
         finally:
             self.setEnabled(True)
+        return pres, regions_all, docs
 
-        from compose.builder import merge_documents
-
-        self.pre = pres[0] if pres else None
-        self.regions = regions_all
-        self.doc, self._page_sizes = merge_documents(docs)
-
-        self.show_blocks()
-        n_formula = sum(1 for b in self.doc["blocks"] if b["type"] == "formula")
+    def _update_result_title(self) -> None:
+        blocks = self.doc["blocks"] if self.doc else []
+        n_formula = sum(1 for b in blocks if b["type"] == "formula")
         self.right_title.setText(
-            f"识别结果 · {len(self.doc['blocks'])} 行"
-            f"(公式 {n_formula},共 {total} 张)"
+            f"识别结果 · {len(blocks)} 行"
+            f"(公式 {n_formula},共 {len(self.image_paths)} 张)"
         )
-        self.statusBar().showMessage(
-            f"识别完成: {total} 张 / {len(self.doc['blocks'])} 块,可直接修改"
-        )
-        self.preview_pane.compile_now(self.doc["tex_source"])
 
     def on_preview(self):
         if not self.doc:
