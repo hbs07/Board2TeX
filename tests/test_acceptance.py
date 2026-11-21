@@ -52,11 +52,11 @@ def test_binary_is_binarized() -> None:
 @pytest.mark.xfail(reason="B 尚未实现:layout/segment.py 的 split_lines/analyze_layout 仍是占位",
                    strict=False)
 def test_layout_splits_sample_into_ordered_lines() -> None:
-    """B 的验收:工整板书能被切成多行,按阅读顺序编号。"""
+    """B 的验收:示例板书有 5 行(英文 3 行 + 公式 2 行),至少要切出 3 行。"""
     pre = preprocess(SAMPLE)
     regions = analyze_layout(pre["binary"])
 
-    assert len(regions) >= 2, f"示例图至少应切出 2 行,实际 {len(regions)}"
+    assert len(regions) >= 3, f"5 行板书至少应切出 3 行,实际 {len(regions)}"
     assert [r["order"] for r in regions] == list(range(len(regions)))
     ys = [r["bbox"][1] for r in regions]
     assert ys == sorted(ys), "必须按从上到下排序"
