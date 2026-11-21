@@ -5,7 +5,7 @@
     python -m compose.builder
 期望结果:
     data/compose_check/builder_test.tex 生成;本机装有 xelatex 时会自动
-    编译出 builder_test.pdf。骨架阶段 tex 正文为空属预期。
+    编译出 builder_test.pdf。自测用的是假 Block,不加载识别模型。
 
 AI 辅助说明: 见 README「诚信声明」。
 
@@ -19,12 +19,10 @@ AI 辅助说明: 见 README「诚信声明」。
                "latex": str, "confidence": float, "bbox": (x, y, w, h)}
     Document = {"blocks": List[Block], "tex_source": str}
 
-给 C 的实现要点(完整参考代码在文档 §7.2):
+实现要点(2026-11-21 已实现):
     1. 一定要按 order 排序,不要依赖列表原顺序;
-    2. 连续文字行合并成一个段落;公式行单独包在 $$...$$ 里,前后空行;
-    3. compose_document 现在的占位版"跳过了识别"直接透传 region 字段;
-       正式版必须改成: blocks = [recognize(r) for r in regions]
-       (recognize 来自 recog/engine.py,也是你要写的);
+    2. 连续文字行合并成一个段落(用空格连接);公式行单独包在 $$...$$ 里,前后空行;
+    3. compose_document 调 recog/engine.py 的 recognize() 完成识别;
     4. 英文换行交给 LaTeX,不要手动加 \\。
 """
 
@@ -36,42 +34,65 @@ from compose.template import TEMPLATE
 def build_body(blocks: list[dict]) -> str:
     """把 Block 列表拼成 .tex 正文(不含模板头尾)。
 
-    算法(参考《分工_C_识别与合成.md》§7.2,文档里有完整参考代码):
+    算法:
       1. blocks 按 order 排序;
       2. 遍历: 文字行攒进段落缓冲;遇到公式行,先把缓冲收尾成一段,
          再追加 "$$ {latex} $$";
-      3. 遍历结束收尾最后一段;段落之间用空行("\\n\\n")连接。
+      3. 段落之间用空行("\\n\\n")连接;
+      4. 空 latex(识别失败/太窄的行)直接跳过,避免产出 $$ $$ 这种编译垃圾。
+
+    分段规则(2026-11-21 实测补充):
+      板书换行大多是"换一个意思",不是排版换行。所以只有**看起来是续行**时才合并:
+      上一行没有以 . : ; ! ? 结尾,且这一行以小写字母开头。
+      例: "Derivative Rules" / "Given ..." -> 两段(标题独立);
+          "... a long sentence that" / "continues here" -> 一段(续行)。
     """
-    # TODO(C): 参考文档 §7.2 实现(约 12 行)
-    return "\n\n".join(b["latex"] for b in blocks)  # 占位: 不分段不分类型
+    parts: list[str] = []
+    buf: list[str] = []
+
+    def flush() -> None:
+        nonlocal buf
+        if buf:
+            parts.append(" ".join(buf))
+            buf = []
+
+    for b in sorted(blocks, key=lambda x: x["order"]):
+        latex = (b.get("latex") or "").strip()
+        if not latex:
+            continue
+
+        if b["type"] == "formula":
+            flush()
+            parts.append(f"$$ {latex} $$")
+            continue
+
+        if buf:
+            prev = buf[-1]
+            ends_sentence = prev.rstrip()[-1:] in ".:;!?"
+            starts_lower = latex[:1].islower()
+            if ends_sentence or not starts_lower:
+                flush()          # 新的一句话/标题: 另起一段
+        buf.append(latex)
+
+    flush()
+    return "\n\n".join(parts)
 
 
 def compose_document(regions: list[dict]) -> dict:
     """layout 的 Region 列表 -> Document(识别 + 合成的总入口)。
 
-    正式版流程(参考文档 §7.2):
+    流程:
       blocks = [recognize(r) for r in regions]      # recog/engine.py
       body = build_body(blocks)
       return {"blocks": blocks, "tex_source": TEMPLATE.replace("% BODY", body)}
-
-    占位版说明: recog/engine.py 还没写,这里先跳过识别,把 region 字段
-    原样转成 Block(latex 留空),保证 main.py 的链路现在就能跑通。
     """
-    # TODO(C): 按上面的正式版流程实现(约 3 行,含 import recog.engine)
-    blocks = [
-        {
-            "order": r["order"],
-            "type": r["type"],
-            "content": "",
-            "latex": "",
-            "confidence": r["confidence"],
-            "bbox": r["bbox"],
-        }
-        for r in regions
-    ]
+    from recog.engine import recognize
+
+    blocks = [recognize(r) for r in regions]
+    body = build_body(blocks)
     return {
         "blocks": blocks,
-        "tex_source": TEMPLATE.replace("% BODY", build_body(blocks)),
+        "tex_source": TEMPLATE.replace("% BODY", body),
     }
 
 
@@ -82,20 +103,24 @@ if __name__ == "__main__":
 
     os.makedirs("data/compose_check", exist_ok=True)
 
-    # 两个假 Region: 占位链路自测用,不依赖 B/C 的模块
-    fake_regions = [
-        {"order": 0, "type": "text", "confidence": 0.9,
-         "bbox": (10, 10, 100, 30), "image": None},
-        {"order": 1, "type": "formula", "confidence": 0.8,
-         "bbox": (10, 50, 100, 40), "image": None},
+    # 假 Block: 只测"拼装",不加载任何识别模型
+    fake_blocks = [
+        {"order": 0, "type": "text", "content": "Given", "latex": "Given",
+         "confidence": 0.9, "bbox": (10, 10, 100, 30)},
+        {"order": 1, "type": "text", "content": " f(x)", "latex": "f(x)",
+         "confidence": 0.9, "bbox": (10, 10, 100, 30)},
+        {"order": 2, "type": "formula", "content": r"\int_0^1 x^2 dx",
+         "latex": r"\int_0^1 x^2 \, dx", "confidence": 0.8,
+         "bbox": (10, 50, 100, 40)},
     ]
-    doc = compose_document(fake_regions)
+    body = build_body(fake_blocks)
+    doc = {"blocks": fake_blocks, "tex_source": TEMPLATE.replace("% BODY", body)}
 
     out = os.path.join("data", "compose_check", "builder_test.tex")
     with open(out, "w", encoding="utf-8") as f:
         f.write(doc["tex_source"])
     print(f"tex 已生成: {out}")
-    print(f"blocks 数: {len(doc['blocks'])}(占位阶段 latex 为空属预期)")
+    print(f"blocks 数: {len(doc['blocks'])}, 正文 {len(body)} 字符")
 
     if shutil.which("xelatex"):
         proc = subprocess.run(
