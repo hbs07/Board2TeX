@@ -1,6 +1,7 @@
 numpy
 pillow
 matplotlib
+requests
 opencv-contrib-python<5
 PyQt5>=5.15
 paddlepaddle>=3.0,<4

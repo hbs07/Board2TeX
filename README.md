@@ -90,6 +90,29 @@ python eval/run_eval.py --mode manual   # 实拍可用率(按 eval/labels.csv)
 自动指标跑的是 `assets/eval/` 里的**合成**板书(白底、印刷体、无透视),用来验证算法链路;
 真实照片的效果请按 `eval/labels.example.csv` 的格式记录人工试跑结果,用 `--mode manual` 统计。
 
+## AI 识别(手写 / 双栏)
+
+本地模型(PaddleOCR + pix2tex)只适合印刷体;手写、双栏、擦痕多的照片可以点主界面的
+**「AI 识别」**,把整张图交给视觉大模型(OpenAI 兼容接口)直接转成 LaTeX。
+
+配置二选一(不要把密钥提交进仓库):
+
+1. 环境变量
+
+```powershell
+$env:B2T_VLM_BASE_URL = "https://hpc-api.westlake.edu.cn/v1"
+$env:B2T_VLM_API_KEY  = "你的密钥"
+$env:B2T_VLM_MODEL    = "Qwen"        # 需支持 image 输入
+```
+
+2. 仓库根目录 `vlm.local.json`(已 gitignore):
+
+```json
+{ "base_url": "https://hpc-api.westlake.edu.cn/v1", "api_key": "...", "model": "Qwen" }
+```
+
+注意:使用该功能会把整张板书照片上传到所配置的接口;识别结果仍可在编辑区逐行修改。
+
 ## MVP 边界(第一版)
 
 - ✅ 单列版面、英文 + 公式混排、**一次导入多张照片并合并成一份笔记**(每张一页)、CPU 推理

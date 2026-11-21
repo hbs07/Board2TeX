@@ -134,7 +134,8 @@ class MainWindow(QMainWindow):
             ("追加图片", self.on_add_images, "", "在现有板书后面继续添加,只识别新图片"),
             ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
             ("调整顺序", self.on_reorder_images, "", "调整多张板书的合并顺序"),
-            ("运行识别", self.on_run, "primary", "预处理 → 切行 → 识别 → 合成;首次会加载模型"),
+            ("运行识别", self.on_run, "primary", "本地识别: 预处理 → 切行 → PaddleOCR/pix2tex"),
+            ("AI 识别", self.on_ai_recognize, "accent", "视觉大模型识别手写/双栏板书(需配置 API)"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
             ("存入错题本", self.on_save_problem, "", "把当前整篇 LaTeX 存入 SQLite 错题本"),
@@ -612,6 +613,62 @@ class MainWindow(QMainWindow):
         finally:
             self.setEnabled(True)
         return pres, regions_all, docs
+
+    def on_ai_recognize(self):
+        """调用视觉大模型识别(手写/双栏兜底),结果同样进入 Block/Document。"""
+        if not self.image_paths:
+            QMessageBox.information(self, "提示", "请先导入图片")
+            return
+
+        from recog import vlm
+
+        if not vlm.is_configured():
+            QMessageBox.warning(
+                self, "未配置 AI 识别",
+                "需要视觉模型 API。请设置环境变量后重启:\n\n"
+                "  B2T_VLM_API_KEY=你的密钥\n"
+                "  B2T_VLM_BASE_URL=https://hpc-api.westlake.edu.cn/v1\n"
+                "  B2T_VLM_MODEL=Qwen\n\n"
+                "(B2T_VLM_API_KEY 未设置时会尝试读取 WESTLAKE_API_KEY)",
+            )
+            return
+
+        from compose.builder import build_body, merge_documents
+        from compose.template import TEMPLATE
+
+        docs: list[dict] = []
+        total = len(self.image_paths)
+        self.setEnabled(False)
+        try:
+            for index, path in enumerate(self.image_paths, 1):
+                self.statusBar().showMessage(
+                    f"AI 识别 {index}/{total}: {os.path.basename(path)}…"
+                )
+                QApplication.processEvents()
+                try:
+                    blocks = vlm.transcribe_image(path)
+                except Exception as exc:        # 网络/接口/解析错误都提示清楚
+                    QMessageBox.critical(
+                        self, "AI 识别失败",
+                        f"{os.path.basename(path)}\n{exc}",
+                    )
+                    return
+                body = build_body(blocks)
+                docs.append({
+                    "blocks": blocks,
+                    "tex_source": TEMPLATE.replace("% BODY", body),
+                })
+        finally:
+            self.setEnabled(True)
+
+        self.doc, self._page_sizes = merge_documents(docs)
+        self.regions = []
+        self.show_blocks()
+        self._update_result_title()
+        self.statusBar().showMessage(
+            f"AI 识别完成: {total} 张 / {len(self.doc['blocks'])} 块"
+        )
+        self.preview_pane.compile_now(self.doc["tex_source"])
 
     def _update_result_title(self) -> None:
         blocks = self.doc["blocks"] if self.doc else []

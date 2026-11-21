@@ -17,6 +17,7 @@ env/
 # 项目运行产物
 data/
 example/
+vlm.local.json
 *.db
 preview.png
 eval/labels.csv
