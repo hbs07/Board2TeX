@@ -17,6 +17,7 @@ AI 辅助说明: 见 README「诚信声明」。
 from __future__ import annotations
 
 import os
+import shutil
 
 import numpy as np
 import pytest
@@ -166,6 +167,23 @@ def test_compile_pdf_end_to_end(tmp_path) -> None:
     pdf_path = compile_pdf(str(tex_path), str(tmp_path))
     assert os.path.exists(pdf_path)
     assert os.path.getsize(pdf_path) > 1000, "PDF 太小,可能是空文档"
+
+
+@pytest.mark.skipif(
+    not has_xelatex() or shutil.which("pdftoppm") is None,
+    reason="预览需要 xelatex + pdftoppm",
+)
+def test_preview_renders_pdf_pages(tmp_path) -> None:
+    """预览链路: tex -> PDF -> 逐页 PNG(截图显示的就是编译后的样子)。"""
+    from compose.builder import compose_document
+    from gui.preview import export_preview_pdf, render_pdf_pages
+
+    doc = compose_document([])
+    pdf_path = export_preview_pdf(doc, str(tmp_path))
+    pages = render_pdf_pages(pdf_path, str(tmp_path))
+
+    assert pages, "至少应渲染出 1 页"
+    assert os.path.getsize(pages[0]) > 1000, "页面图太小,可能是空白页"
 
 
 # ---------------------------------------------------------------- 通用:GUI 可构造

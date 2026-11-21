@@ -397,17 +397,10 @@ class MainWindow(QMainWindow):
             return
         self._rebuild_tex()
 
-        from compose.builder import build_body
+        # 预览的是"编译后的样子": xelatex 编译 -> PDF 逐页转图 -> 弹窗显示
+        from gui.preview import show_compiled_preview
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("预览")
-        dialog.resize(680, 520)
-        layout = QVBoxLayout(dialog)
-        view = QTextEdit()
-        view.setReadOnly(True)
-        view.setPlainText(build_body(self.doc["blocks"]) or "(正文为空)")
-        layout.addWidget(view)
-        dialog.exec_()
+        show_compiled_preview(self, self.doc)
 
     def on_export_tex(self):
         if not self.doc:

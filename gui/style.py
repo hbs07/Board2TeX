@@ -245,6 +245,25 @@ QLabel#statusBadge {{
     padding-right: 10px;
 }}
 
+/* ---------------------------------------------------------------- 预览 */
+QLabel#previewInfo {{
+    color: {COLORS["muted"]};
+    font-size: 12px;
+}}
+QScrollArea#previewScroll {{
+    border: none;
+    background: transparent;
+}}
+QWidget#previewHost {{
+    background: transparent;
+}}
+QLabel#previewPage {{
+    background: white;
+    border: 1px solid {COLORS["border"]};
+    border-radius: 10px;
+    padding: 6px;
+}}
+
 /* ---------------------------------------------------------------- 对话框 */
 QDialog {{
     background: {COLORS["bg"]};
