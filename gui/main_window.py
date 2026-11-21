@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
             ("追加图片", self.on_add_images, "", "在现有板书后面继续添加,只识别新图片"),
             ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
             ("调整顺序", self.on_reorder_images, "", "调整多张板书的合并顺序"),
+            ("手动切分", self.on_manual_segment, "", "在图上手动框选每一行(适合手写/双栏照片)"),
             ("运行识别", self.on_run, "primary", "预处理 → 切行 → 识别 → 合成;首次会加载模型"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
@@ -549,6 +550,96 @@ class MainWindow(QMainWindow):
         self._rebuild_tex()
         self.show_blocks()
         self.preview_pane.compile_now(self.doc["tex_source"])
+
+    def on_manual_segment(self):
+        """手动框选: 适合自动切行失败的手写/双栏照片。"""
+        if not self.image_paths:
+            QMessageBox.information(self, "提示", "请先导入图片")
+            return
+
+        index = 0
+        if len(self.image_paths) > 1:
+            items = [f"{i + 1}. {os.path.basename(p)}"
+                     for i, p in enumerate(self.image_paths)]
+            choice, ok = QInputDialog.getItem(
+                self, "手动切分", "要切分哪一张:", items, 0, False
+            )
+            if not ok:
+                return
+            index = items.index(choice)
+
+        from gui.manual_segment import ManualSegmentDialog
+
+        dialog = ManualSegmentDialog(
+            self, self._image_pixmaps[index],
+            f"手动切分 · {os.path.basename(self.image_paths[index])}",
+        )
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        rects = dialog.boxes()
+        if rects:
+            self._apply_manual_page(index, rects)
+
+    def _apply_manual_page(self, index: int, rects: list[tuple]) -> None:
+        """把手动框选的内容逐框识别,替换该图片原来的结果。"""
+        from compose.builder import build_body, replace_page
+        from compose.template import TEMPLATE
+        from layout.classify import classify_line
+        from layout.segment import ensure_foreground_white
+        from preprocess.enhance import binarize, to_gray
+        from recog.engine import recognize
+
+        image = load_image(self.image_paths[index])
+        regions = []
+        for order, (x, y, w, h) in enumerate(rects):
+            crop = image[y:y + h, x:x + w]
+            gray = to_gray(crop) if crop.ndim == 3 else crop
+            kind = (
+                classify_line(ensure_foreground_white(binarize(gray)))
+                if w >= 20 else "text"
+            )
+            regions.append({
+                "bbox": (x, y, w, h), "type": kind, "order": order,
+                "image": crop, "confidence": 0.6,
+            })
+
+        blocks = []
+        self.setEnabled(False)
+        try:
+            for i, region in enumerate(regions, 1):
+                self.statusBar().showMessage(
+                    f"正在识别手动框选 {i}/{len(regions)}…"
+                )
+                QApplication.processEvents()
+                try:
+                    blocks.append(recognize(region))
+                except Exception:              # 单框失败不影响其他行
+                    blocks.append({
+                        "order": region["order"], "type": region["type"],
+                        "content": "", "latex": "", "confidence": 0.0,
+                        "bbox": region["bbox"],
+                    })
+        finally:
+            self.setEnabled(True)
+
+        body = build_body(blocks)
+        doc = {"blocks": blocks, "tex_source": TEMPLATE.replace("% BODY", body)}
+
+        if self.doc is None:
+            self.doc = doc
+            self._page_sizes = [0] * index + [len(blocks)]
+        else:
+            self.doc["blocks"], self._page_sizes = replace_page(
+                self.doc["blocks"], self._page_sizes, index, doc
+            )
+            self._rebuild_tex()
+
+        self.show_blocks()
+        self._update_result_title()
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self.statusBar().showMessage(
+            f"已用手动切分替换第 {index + 1} 张({len(blocks)} 行)"
+        )
 
     def on_view_image(self):
         if not self._image_pixmaps:

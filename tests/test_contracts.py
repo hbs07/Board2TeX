@@ -241,6 +241,32 @@ def test_move_block_within_and_across_pages() -> None:
     assert sizes == [2, 1]
 
 
+def test_replace_page_keeps_other_pages() -> None:
+    """手动切分替换某一页: 只替换目标页,其他页内容与顺序不变。"""
+    from compose.builder import replace_page
+
+    blocks = [
+        {"order": i, "type": "text", "content": f"t{i}",
+         "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+        for i in range(3)                    # 页1: t0,t1;页2: t2
+    ]
+    new_doc = {
+        "blocks": [
+            {"order": 0, "type": "text", "content": "n0",
+             "latex": "n0", "confidence": 0.8, "bbox": (0, 0, 1, 1)},
+            {"order": 1, "type": "text", "content": "n1",
+             "latex": "n1", "confidence": 0.8, "bbox": (0, 0, 1, 1)},
+        ],
+        "tex_source": "",
+    }
+
+    new_blocks, new_sizes = replace_page(blocks, [2, 1], 0, new_doc)
+
+    assert new_sizes == [2, 1], "只替换目标页,页数不变"
+    assert [b["content"] for b in new_blocks] == ["n0", "n1", "t2"]
+    assert [b["order"] for b in new_blocks] == [0, 1, 2]
+
+
 # ---------------------------------------------------------------- 识别(C)
 
 

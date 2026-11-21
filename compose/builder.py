@@ -197,6 +197,32 @@ def move_block(blocks: list[dict], page_sizes: list[int],
     return new_blocks, new_sizes
 
 
+def replace_page(blocks: list[dict], page_sizes: list[int],
+                 index: int, new_doc: dict) -> tuple[list[dict], list[int]]:
+    """用新识别的一页替换第 index 页(手动切分后调用)。
+
+    new_doc 的 blocks 会按 order 排序;替换后所有 block 重新连续编号,
+    page_sizes 保持与图片一一对应。
+    """
+    slices: list[list[dict]] = []
+    start = 0
+    for size in page_sizes:
+        slices.append(blocks[start:start + size])
+        start += size
+    while len(slices) <= index:          # 页数与图片数不一致时补齐空页
+        slices.append([])
+
+    slices[index] = sorted(new_doc.get("blocks", []), key=lambda b: b["order"])
+
+    new_blocks: list[dict] = []
+    new_sizes: list[int] = []
+    for part in slices:
+        offset = len(new_blocks)
+        new_blocks.extend(dict(b, order=offset + i) for i, b in enumerate(part))
+        new_sizes.append(len(part))
+    return new_blocks, new_sizes
+
+
 if __name__ == "__main__":
     import os
     import shutil
