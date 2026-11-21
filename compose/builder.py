@@ -165,6 +165,38 @@ def append_documents(blocks: list[dict], page_sizes: list[int],
     return new_blocks, new_sizes
 
 
+def move_block(blocks: list[dict], page_sizes: list[int],
+               index: int, delta: int) -> tuple[list[dict], list[int]]:
+    """把第 index 行上移/下移(delta=±1),可跨页;order 重新连续编号。
+
+    跨页时同步调整 page_sizes: 原页 -1,目标页 +1,保证分页结构不乱。
+    """
+    target = index + delta
+    if index < 0 or index >= len(blocks) or target < 0 or target >= len(blocks):
+        return list(blocks), list(page_sizes)
+
+    def page_of(pos: int) -> int:
+        acc = 0
+        for page, size in enumerate(page_sizes):
+            acc += size
+            if pos < acc:
+                return page
+        return len(page_sizes) - 1
+
+    src_page = page_of(index)
+    dst_page = page_of(target)
+
+    new_blocks = list(blocks)
+    new_blocks[index], new_blocks[target] = new_blocks[target], new_blocks[index]
+    new_blocks = [dict(b, order=i) for i, b in enumerate(new_blocks)]
+
+    new_sizes = list(page_sizes)
+    if src_page != dst_page:
+        new_sizes[src_page] -= 1
+        new_sizes[dst_page] += 1
+    return new_blocks, new_sizes
+
+
 if __name__ == "__main__":
     import os
     import shutil

@@ -214,6 +214,33 @@ def test_append_documents_keeps_existing_blocks() -> None:
     assert blocks[2]["content"] == "t2"
 
 
+def test_move_block_within_and_across_pages() -> None:
+    """行内上移/下移: 页内移动不改页大小;跨页移动要把计数挪过去。"""
+    from compose.builder import move_block
+
+    blocks = [
+        {"order": i, "type": "text", "content": f"t{i}",
+         "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+        for i in range(3)                    # 页1: t0,t1;页2: t2
+    ]
+
+    # 页内: t0 与 t1 交换,页大小不变
+    moved, sizes = move_block(blocks, [2, 1], 0, 1)
+    assert [b["content"] for b in moved] == ["t1", "t0", "t2"]
+    assert sizes == [2, 1]
+
+    # 跨页: t1 下移到页2,页大小变成 [1, 2]
+    moved, sizes = move_block(blocks, [2, 1], 1, 1)
+    assert [b["content"] for b in moved] == ["t0", "t2", "t1"]
+    assert sizes == [1, 2]
+    assert [b["order"] for b in moved] == [0, 1, 2]
+
+    # 边界: 第一行上移是无效操作
+    same, sizes = move_block(blocks, [2, 1], 0, -1)
+    assert [b["content"] for b in same] == ["t0", "t1", "t2"]
+    assert sizes == [2, 1]
+
+
 # ---------------------------------------------------------------- 识别(C)
 
 

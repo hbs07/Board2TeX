@@ -271,6 +271,13 @@ QPushButton#zoomBtn {{
     font-weight: 600;
     min-width: 18px;
 }}
+QPushButton#rowBtn {{
+    padding: 2px 2px;
+    font-size: 12px;
+    min-width: 20px;
+    max-width: 26px;
+    border-radius: 6px;
+}}
 QLabel#zoomLabel {{
     color: {COLORS["muted"]};
     font-size: 11px;

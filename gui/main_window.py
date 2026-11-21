@@ -33,7 +33,7 @@ import numpy as np
 # 必须先于 PyQt5 导入(原因见 gui/torch_preload.py 的说明与实测记录)
 from gui import torch_preload  # noqa: F401
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout, QInputDialog,
@@ -308,6 +308,23 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(chip)
             row_layout.addWidget(conf_label)
             row_layout.addWidget(edit, 1)
+
+            # 行内上移/下移(可跨页),用于修正识别顺序或重排内容
+            up = QPushButton("↑")
+            down = QPushButton("↓")
+            up.setObjectName("rowBtn")
+            down.setObjectName("rowBtn")
+            for btn, tip in ((up, "上移一行"), (down, "下移一行")):
+                btn.setFixedWidth(26)
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setToolTip(tip)
+            up.setEnabled(order > 0)
+            down.setEnabled(order < len(self.doc["blocks"]) - 1)
+            up.clicked.connect(lambda _=False, o=order: self._move_block(o, -1))
+            down.clicked.connect(lambda _=False, o=order: self._move_block(o, 1))
+            row_layout.addWidget(up)
+            row_layout.addWidget(down)
+
             self.editor_layout.addWidget(row)
             self.block_edits[order] = edit
 
@@ -325,6 +342,30 @@ class MainWindow(QMainWindow):
                 widget.setParent(None)     # 先从界面摘掉,避免和新建的行重叠
                 widget.deleteLater()
         self.block_edits.clear()
+
+    def _move_block(self, order: int, delta: int) -> None:
+        """把某一行上移/下移(delta=±1),可跨页;不重新识别。"""
+        if not self.doc:
+            return
+        if order + delta < 0 or order + delta >= len(self.doc["blocks"]):
+            return
+
+        from compose.builder import move_block
+
+        self.doc["blocks"], self._page_sizes = move_block(
+            self.doc["blocks"], self._page_sizes, order, delta
+        )
+        self._rebuild_tex()
+
+        scroll = self.editor_area.verticalScrollBar().value()
+        self.show_blocks()
+        QTimer.singleShot(
+            0, lambda: self.editor_area.verticalScrollBar().setValue(scroll)
+        )
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self.statusBar().showMessage(
+            f"已{'上' if delta < 0 else '下'}移第 {order} 行,预览已更新"
+        )
 
     def _on_block_edited(self, order: int, text: str):
         """编辑框一改: 写回 block,重建 tex,并触发实时预览(防抖)。"""
