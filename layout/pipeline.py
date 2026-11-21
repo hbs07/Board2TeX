@@ -9,7 +9,7 @@
     python -m layout.pipeline assets/test_text.png data/layout_check
 期望结果:
     data/layout_check/annotated.png 生成;
-    B 填完全部函数后,图中每行板书被单独框住,编号从上到下递增。
+    示例图 5 行板书被单独框住(2 行公式为红框),编号从上到下递增。
 
 AI 辅助说明: 见 README「诚信声明」。
 """

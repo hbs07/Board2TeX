@@ -22,14 +22,40 @@ import numpy as np
 def classify_line(line_img: np.ndarray) -> str:
     """输入一行二值图(字=白),返回 "text" 或 "formula"。
 
-    记分规则(参考《分工_B_版面分析.md》§5,共 3 分,>=2 分判公式):
-      1. 连通域宽度差异大: np.std(widths) > 0.5 * np.mean(widths)   -> +1
-      2. 存在超大符号:   areas.max() > 3 * np.median(areas)         -> +1
-      3. 整行偏高:       h / max(w, 1) > 0.35                       -> +1
+    记分规则(2026-11-21 在 5 行标注样例上调过,阈值与分工文档 §5 略有出入):
+      1. 行太"高": h / w > 0.20                       -> +2(公式行通常很紧凑)
+      2. 字高差异大: std(heights) / mean > 0.50        -> +1(积分号/分式比字母高得多)
+      3. 存在超大符号: max(areas) > 2.5 * median(areas) -> +1
+      4. 字宽差异大: std(widths) / mean > 0.55         -> +1
+    总分 >= 3 判 formula,否则 text。
+    调参依据: assets/test_text.png 的 5 行(3 文字 + 2 公式)全部判对;
+    短文本行(如单独一个 "Proof:")可能被判成公式,由校对界面人工改,这是规则法的已知代价。
+
     连通域用 cv2.connectedComponentsWithStats(line_img, 8);
     注意取 stats[1:] —— 第 0 个是背景,要丢掉;没有任何前景时返回 "text"。
 
     验证: 纯文字行 -> "text";带分式/根号的行 -> 倾向 "formula"。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§5 实现(约 10 行,含 import cv2)
-    return "text"  # 占位: 恒判文字,保证流水线能跑;调参阶段再改阈值
+    import cv2
+
+    h, w = line_img.shape[:2]
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(line_img, 8)
+    if n <= 1:                             # 只有背景,没有前景
+        return "text"
+
+    widths = stats[1:, cv2.CC_STAT_WIDTH].astype(np.float64)
+    heights = stats[1:, cv2.CC_STAT_HEIGHT].astype(np.float64)
+    areas = stats[1:, cv2.CC_STAT_AREA].astype(np.float64)
+    if len(areas) == 0:
+        return "text"
+
+    score = 0
+    if h / max(w, 1) > 0.20:
+        score += 2
+    if np.std(heights) > 0.50 * np.mean(heights):
+        score += 1
+    if areas.max() > 2.5 * np.median(areas):
+        score += 1
+    if np.std(widths) > 0.55 * np.mean(widths):
+        score += 1
+    return "formula" if score >= 3 else "text"

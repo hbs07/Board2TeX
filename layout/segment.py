@@ -35,8 +35,11 @@ def ensure_foreground_white(bin_img: np.ndarray) -> np.ndarray:
     取反用 cv2.bitwise_not(bin_img)。注意: 已经是白字白底黑(整体偏黑)时不要动。
     验证: 黑字白底图输入后,np.mean(输出) < 127 且 cv2.countNonZero 明显增多。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§4.2 实现(约 4 行,含 import cv2)
-    return bin_img  # 占位: 原样返回,保证流水线能跑
+    import cv2
+
+    if np.mean(bin_img) > 127:            # 整体偏白 = 黑字白底
+        return cv2.bitwise_not(bin_img)
+    return bin_img
 
 
 def split_lines(bin_img: np.ndarray, min_h: int = 28) -> list[tuple[int, int]]:
@@ -50,8 +53,22 @@ def split_lines(bin_img: np.ndarray, min_h: int = 28) -> list[tuple[int, int]]:
 
     验证: test_empty_image 应返回 [];有两行字、中间空 5 行的图应返回 2 个区间。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§4.3 实现(约 12 行)
-    return [(0, bin_img.shape[0])]  # 占位: 整页当一行,保证下游有东西可处理
+    row_proj = (bin_img > 0).sum(axis=1)   # 每行的前景像素数(字=白)
+    lines: list[tuple[int, int]] = []
+    start = None
+
+    for y, v in enumerate(row_proj):
+        if v > 0 and start is None:        # 空白 -> 有字: 一行开始
+            start = y
+        elif v == 0 and start is not None:  # 有字 -> 空白: 一行结束
+            if y - start >= min_h:
+                lines.append((start, y))
+            start = None
+
+    if start is not None:                  # 图像底部还有一行没收尾
+        if len(row_proj) - start >= min_h:
+            lines.append((start, len(row_proj)))
+    return lines
 
 
 def analyze_layout(binary: np.ndarray) -> list[dict]:
@@ -70,5 +87,27 @@ def analyze_layout(binary: np.ndarray) -> list[dict]:
 
     验证: 返回的每个 Region 都满足文件头注释里的冻结结构。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§4.4 实现(约 18 行)
-    return []  # 占位: 空列表,等 split_lines/classify_line 就绪后由 B 填全
+    from layout.classify import classify_line
+
+    bin_img = ensure_foreground_white(binary)
+    regions: list[dict] = []
+
+    for y0, y1 in split_lines(bin_img):
+        line = bin_img[y0:y1, :]
+        cols = np.where((line > 0).any(axis=0))[0]
+        if len(cols) == 0:
+            continue                       # 空行: 跳过
+        x0, x1 = int(cols[0]), int(cols[-1]) + 1
+        block = line[:, x0:x1]
+        regions.append({
+            "bbox": (x0, int(y0), x1 - x0, int(y1 - y0)),
+            "type": classify_line(block),
+            "order": -1,
+            "image": block,
+            "confidence": 0.6,             # 规则分类把握不大, 先给 0.6
+        })
+
+    regions.sort(key=lambda r: r["bbox"][1])
+    for i, r in enumerate(regions):
+        r["order"] = i
+    return regions

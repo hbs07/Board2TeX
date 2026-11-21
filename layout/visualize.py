@@ -27,7 +27,14 @@ def draw_regions(bin_img: np.ndarray, regions: list[dict], out_path: str) -> np.
 
     验证: 打开生成的图,框应贴合每行内容,编号从上到下递增。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§6 实现(约 8 行,含 import cv2)
-    # 占位: 只保证能存图不崩;已是三通道就原样用,否则复制成三通道
-    vis = bin_img if bin_img.ndim == 3 else np.stack([bin_img] * 3, axis=-1)
+    import cv2
+
+    vis = cv2.cvtColor(bin_img, cv2.COLOR_GRAY2BGR) if bin_img.ndim == 2 else bin_img.copy()
+    for r in regions:
+        x, y, w, h = r["bbox"]
+        color = (0, 0, 255) if r["type"] == "formula" else (0, 255, 0)
+        cv2.rectangle(vis, (x, y), (x + w, y + h), color, 2)
+        cv2.putText(vis, f'{r["order"]}:{r["type"]}', (x, max(y - 5, 12)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    cv2.imwrite(out_path, vis)
     return vis
