@@ -13,14 +13,15 @@ A 已就绪(D 可以直接用):
     - self.image_label : 显示图像的 QLabel(左);
     - self.editor_area : 右侧滚动区,里面 self.editor_layout 可加控件;
     - self.doc / self.pre / self.regions : 识别结果(数据结构见冻结接口);
-    - 5 个按钮已接线:导入图片 / 运行识别 / 预览 / 导出 .tex / 导出 PDF;
-    - _show_image(): ndarray 上屏(含 .copy() 防花屏,别删)。
+    - 7 个按钮已接线:导入图片 / 运行识别 / 预览 / 导出 .tex / 导出 PDF /
+      存入错题本 / 错题本;
 
-D 的任务(按分工文档 §4,在 TODO(D) 处填):
-    1. show_blocks(): 把 self.doc["blocks"] 渲染成可编辑行(gui/widgets.py);
-    2. on_edit(): 编辑写回 self.doc["blocks"];
-    3. on_preview(): 简单文字预览(文档 §4.2);
-    4. "存入错题本"按钮 + 错题本列表页(vault/db.py 就绪后加)。
+编辑区实现(2026-11-21 接入):
+    1. show_blocks(): 把 self.doc["blocks"] 渲染成一行一个输入框,低置信度标红;
+    2. _on_block_edited(): 输入框改动实时写回 block["latex"];
+    3. on_preview(): 预览当前 blocks 拼出的正文;
+    4. 导出前统一 _rebuild_tex(),保证导出的是改过的版本;
+    5. 错题本: 存入/查看/按编号删除,数据库在 vault/board2tex.db。
 """
 
 from __future__ import annotations
@@ -28,13 +29,25 @@ from __future__ import annotations
 import os
 
 import numpy as np
+
+# Windows 踩坑(2026-11-21 实测): 先 import PyQt5 再 import torch,会报
+#   OSError: [WinError 1114] ... Error loading "torch\lib\c10.dll"
+# 反过来先 import torch 就正常。这一行必须留在所有 PyQt5 导入之前,
+# 别在"整理 import"时把它挪走,否则点「运行识别」会直接崩。
+try:
+    import torch  # noqa: F401  (只为提前加载 DLL,本文件不用它)
+except Exception:          # 没装 torch 或 DLL 加载失败:文字识别仍可用,公式识别会降级
+    pass
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
-    QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel,
+    QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 
+from config import TEXT_CONF_THRESHOLD
 from gui.exporter import compile_pdf, has_xelatex
 from main import pipeline
 from preprocess.pipeline import load_image
@@ -67,6 +80,8 @@ class MainWindow(QMainWindow):
         self.pre: dict | None = None       # {"binary", "bgr"}
         self.regions: list[dict] = []      # layout 输出
         self.doc: dict | None = None       # {"blocks", "tex_source"}
+        self.block_edits: dict[int, QLineEdit] = {}   # order -> 编辑框
+        self._db = None                    # 错题本连接(懒加载)
 
         self._build_ui()
 
@@ -86,6 +101,8 @@ class MainWindow(QMainWindow):
             ("预览", self.on_preview),
             ("导出 .tex", self.on_export_tex),
             ("导出 PDF", self.on_export_pdf),
+            ("存入错题本", self.on_save_problem),
+            ("错题本", self.on_show_vault),
         ]:
             btn = QPushButton(text)
             btn.clicked.connect(slot)
@@ -105,9 +122,9 @@ class MainWindow(QMainWindow):
         editor_host = QWidget()
         self.editor_layout = QVBoxLayout(editor_host)
         self.editor_layout.setAlignment(Qt.AlignTop)
-        self.editor_layout.addWidget(
-            QLabel("(编辑行将显示在这里 —— D 填 show_blocks)")
-        )
+        self._editor_hint = QLabel("识别结果会显示在这里,可直接改每一行的 LaTeX")
+        self._editor_hint.setWordWrap(True)
+        self.editor_layout.addWidget(self._editor_hint)
         self.editor_area.setWidget(editor_host)
 
         content_row = QHBoxLayout()
@@ -129,6 +146,82 @@ class MainWindow(QMainWindow):
         self.image_label.setPixmap(scaled)
         if note:
             self.statusBar().showMessage(note)
+
+    # ------------------------------------------------------------------
+    # 右侧编辑区(D 的接入点)
+    # ------------------------------------------------------------------
+    def show_blocks(self):
+        """把 doc["blocks"] 渲染成"一行一个输入框",改哪个就写回哪个 Block。"""
+        while self.editor_layout.count():
+            item = self.editor_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.block_edits.clear()
+
+        if not self.doc:
+            return
+
+        for b in self.doc["blocks"]:
+            order = b["order"]
+            conf = float(b["confidence"])
+            low_conf = 0.0 < conf < TEXT_CONF_THRESHOLD
+
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+
+            tag = QLabel(f'{order} [{b["type"]}] {conf:.2f}')
+            tag.setMinimumWidth(120)
+            if low_conf:
+                tag.setStyleSheet("color: #c0392b;")
+
+            edit = QLineEdit(b["latex"])
+            edit.setPlaceholderText("(空)")
+            if low_conf:
+                edit.setStyleSheet("border: 1px solid #c0392b;")
+            edit.textChanged.connect(
+                lambda text, o=order: self._on_block_edited(o, text)
+            )
+
+            row_layout.addWidget(tag)
+            row_layout.addWidget(edit, 1)
+            self.editor_layout.addWidget(row)
+            self.block_edits[order] = edit
+
+    def _on_block_edited(self, order: int, text: str):
+        """编辑框一改,立刻写回 self.doc(导出/预览前再统一重建 tex)。"""
+        if not self.doc:
+            return
+        for b in self.doc["blocks"]:
+            if b["order"] == order:
+                b["latex"] = text
+                break
+
+    def _rebuild_tex(self):
+        """用当前(可能已被人工修改的)blocks 重建 tex_source。"""
+        if not self.doc:
+            return
+        from compose.builder import build_body
+        from compose.template import TEMPLATE
+
+        body = build_body(self.doc["blocks"])
+        self.doc["tex_source"] = TEMPLATE.replace("% BODY", body)
+
+    def _get_db(self):
+        """懒加载错题本连接(第一次用时才建库)。"""
+        if self._db is None:
+            from vault.db import init_db
+
+            os.makedirs("vault", exist_ok=True)
+            self._db = init_db(os.path.join("vault", "board2tex.db"))
+        return self._db
+
+    def closeEvent(self, event):
+        if self._db is not None:
+            self._db.close()
+            self._db = None
+        super().closeEvent(event)
 
     # ------------------------------------------------------------------
     # 按钮槽函数
@@ -156,16 +249,28 @@ class MainWindow(QMainWindow):
             self.pre["bgr"],
             f"识别完成: {len(self.regions)} 个区域, {len(self.doc['blocks'])} 个块",
         )
-        # TODO(D): 调 self.show_blocks() 把 self.doc["blocks"] 渲染成可编辑行
-        QMessageBox.information(
-            self, "识别完成",
-            f"{len(self.regions)} 个区域 / {len(self.doc['blocks'])} 个块\n"
-            "(编辑行显示: D 填 show_blocks)",
+        self.show_blocks()
+        self.statusBar().showMessage(
+            f"识别完成: {len(self.doc['blocks'])} 块,右侧可直接修改"
         )
 
     def on_preview(self):
-        # TODO(D): 按分工文档 §4.2 实现预览(matplotlib 画 tex 文本即可)
-        QMessageBox.information(self, "提示", "预览功能: D 待实现(文档 §4.2)")
+        if not self.doc:
+            QMessageBox.information(self, "提示", "请先运行识别")
+            return
+        self._rebuild_tex()
+
+        from compose.builder import build_body
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("预览")
+        dialog.resize(680, 520)
+        layout = QVBoxLayout(dialog)
+        view = QTextEdit()
+        view.setReadOnly(True)
+        view.setPlainText(build_body(self.doc["blocks"]) or "(正文为空)")
+        layout.addWidget(view)
+        dialog.exec_()
 
     def on_export_tex(self):
         if not self.doc:
@@ -176,7 +281,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-        # TODO(D): 编辑功能就绪后,这里先写回编辑再导出(见 exporter.export_tex)
+        self._rebuild_tex()          # 先写回人工修改,再导出
         from gui.exporter import export_tex
         export_tex(self.doc, path)
         self.statusBar().showMessage(f"已导出: {path}")
@@ -197,6 +302,7 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        self._rebuild_tex()          # 先写回人工修改,再导出
         from gui.exporter import export_tex
         export_tex(self.doc, path)
         out_dir = os.path.dirname(os.path.abspath(path)) or "."
@@ -206,6 +312,72 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "编译失败", str(e))
             return
         self.statusBar().showMessage(f"已导出: {pdf}")
+
+    # ------------------------------------------------------------------
+    # 错题本(D)
+    # ------------------------------------------------------------------
+    def on_save_problem(self):
+        if not self.doc:
+            QMessageBox.information(self, "提示", "请先运行识别")
+            return
+        self._rebuild_tex()
+
+        course, ok = QInputDialog.getText(self, "存入错题本", "课程名(如 Calculus):")
+        if not ok or not course.strip():
+            return
+        tags_text, ok = QInputDialog.getText(
+            self, "存入错题本", "标签(逗号分隔,可留空):"
+        )
+        if not ok:
+            return
+        tags = [t.strip() for t in tags_text.replace("，", ",").split(",") if t.strip()]
+
+        try:
+            from vault.db import add_problem
+
+            add_problem(self._get_db(), course.strip(), tags,
+                        self.doc["tex_source"], self.image_path or "")
+        except Exception as exc:                    # 数据库异常不能弄崩界面
+            QMessageBox.critical(self, "保存失败", str(exc))
+            return
+        self.statusBar().showMessage(f"已存入错题本: {course.strip()}")
+
+    def on_show_vault(self):
+        try:
+            from vault.db import delete_problem, list_problems
+
+            rows = list_problems(self._get_db())
+        except Exception as exc:
+            QMessageBox.critical(self, "读取失败", str(exc))
+            return
+
+        if not rows:
+            QMessageBox.information(self, "错题本", "还没有记录,先识别一道题再「存入错题本」")
+            return
+
+        text = "\n".join(
+            f"#{r[0]}  [{r[1]}]  {r[2] or '(无标签)'}  {r[5]}" for r in rows
+        )
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"错题本({len(rows)} 条)")
+        dialog.resize(720, 480)
+        layout = QVBoxLayout(dialog)
+        view = QTextEdit()
+        view.setReadOnly(True)
+        view.setPlainText(text)
+        layout.addWidget(view)
+        dialog.exec_()
+
+        pid, ok = QInputDialog.getInt(
+            self, "删除记录", "要删除的编号(点 Cancel 跳过):", 0, 0, 10 ** 9
+        )
+        if ok and pid > 0:
+            try:
+                delete_problem(self._get_db(), pid)
+            except Exception as exc:
+                QMessageBox.critical(self, "删除失败", str(exc))
+                return
+            self.statusBar().showMessage(f"已删除记录 #{pid}")
 
 
 if __name__ == "__main__":
