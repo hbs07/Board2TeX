@@ -24,6 +24,8 @@ AI 辅助说明: 见 README「诚信声明」。
 
 from __future__ import annotations
 
+import os
+
 import cv2
 import numpy as np
 
@@ -31,15 +33,33 @@ from config import MAX_SIDE
 from preprocess.enhance import binarize, crop_content, normalize, to_gray
 
 
+def _decode_image(path: str) -> np.ndarray | None:
+    """用字节流读图,兼容中文/空格路径。
+
+    为什么不用 cv2.imread:
+        Windows 上 cv2.imread 走 ANSI 路径,遇到中文文件名直接返回 None
+        (实测 "微信图片_xxx.jpg" 读不出来,imdecode 却正常)。
+    """
+    data = np.fromfile(path, dtype=np.uint8)
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+
 def load_image(path: str, max_side: int = MAX_SIDE) -> np.ndarray:
     """读入图片并缩放,返回 BGR ndarray(长边 <= max_side)。
 
-    - 读不到/非图片时抛 FileNotFoundError(不要返回 None,让错误尽早暴露);
+    - 路径含中文也可以(内部用 imdecode,不用 imread);
+    - 读不到/非图片时抛 FileNotFoundError 或 ValueError(不返回 None);
     - 只在图太大时缩小,从不放大(放大只会糊)。
     """
-    img = cv2.imread(path)
-    if img is None:
+    if not os.path.exists(path):
         raise FileNotFoundError(path)
+
+    img = _decode_image(path)
+    if img is None:
+        raise ValueError(f"无法读取图片(格式不支持或文件损坏): {path}")
+
     h, w = img.shape[:2]
     scale = max_side / max(h, w)
     if scale < 1:

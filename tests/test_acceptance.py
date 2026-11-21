@@ -26,7 +26,7 @@ from compose.builder import build_body
 from gui.exporter import compile_pdf, has_xelatex
 from layout.pipeline import analyze_layout
 from main import pipeline
-from preprocess.pipeline import preprocess
+from preprocess.pipeline import load_image, preprocess
 
 SAMPLE = os.path.join("assets", "test_text.png")
 
@@ -38,6 +38,16 @@ def test_binary_is_single_channel() -> None:
     """B 的验收:binary 是单通道(下游 layout 的列投影才有意义)。"""
     pre = preprocess(SAMPLE)
     assert pre["binary"].ndim == 2, f"binary 应为 (H, W),实际 {pre['binary'].shape}"
+
+
+def test_load_image_supports_chinese_path(tmp_path) -> None:
+    """中文文件名/路径也要能读(Windows 上 cv2.imread 会返回 None)。"""
+    dst = tmp_path / "板书_测试.png"
+    with open(SAMPLE, "rb") as src:
+        dst.write_bytes(src.read())
+
+    img = load_image(str(dst))
+    assert img.ndim == 3 and img.shape[2] == 3
 
 
 def test_binary_is_binarized() -> None:
