@@ -5,7 +5,7 @@
     python -c "import numpy as np; from layout.classify import classify_line; \
 img = np.zeros((60, 200), np.uint8); img[10:50, 10:190] = 255; \
 print(classify_line(img))"
-期望结果: 打印 text 或 formula(占位阶段恒为 text)。
+期望结果: 打印 text 或 formula。
 
 AI 辅助说明: 见 README「诚信声明」。
 

@@ -59,11 +59,9 @@ def compile_pdf(tex_path: str, out_dir: str) -> str:
 def export_tex(doc: dict, path: str) -> None:
     """把 Document 的 tex_source 写成 .tex 文件。
 
-    ⚠️ TODO(D): 目前只写 doc["tex_source"]。等你把"编辑写回"做完后,
-    导出前必须先用编辑后的 blocks 重建 tex_source(调 C 的 build_body +
-    TEMPLATE),否则导出的永远是识别原始结果——这是分工文档 §5.2 强调的坑。
-    参考实现:《分工_D_应用与评估.md》§5.1(3 行)。
+    本函数只负责"落盘",不重建 tex_source——重建由调用方在导出前完成
+    (GUI 里是 MainWindow._rebuild_tex():用编辑后的 blocks 调 build_body + 模板)。
+    这样 CLI、GUI、测试三处复用同一份导出逻辑,不会出现"谁忘了重建"的分叉。
     """
-    # TODO(D): 参考文档 §5.1 实现,并补上"重建 tex_source"逻辑
     with open(path, "w", encoding="utf-8") as f:
         f.write(doc["tex_source"])

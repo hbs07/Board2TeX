@@ -47,13 +47,13 @@ if __name__ == "__main__":
     if scale < 1:
         bgr = cv2.resize(bgr, (int(w * scale), int(h * scale)))
 
-    # 走一遍 enhance(B 填完后这里是真实二值图;占位阶段仍是彩色图,仅供跑通)
+    # 走一遍 enhance: 得到"字=白/黑"的真实二值图
     gray = to_gray(bgr)
     gray = normalize(gray)
     bin_img = crop_content(binarize(gray))
 
     regions = analyze_layout(bin_img)
-    print(f"切出 {len(regions)} 个 Region")  # 占位阶段为 0 属正常
+    print(f"切出 {len(regions)} 个 Region")
 
     vis = draw_regions(bin_img, regions, os.path.join(out_dir, "annotated.png"))
     cv2.imwrite(os.path.join(out_dir, "annotated.png"), vis)

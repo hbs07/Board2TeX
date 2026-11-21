@@ -102,9 +102,8 @@ def test_load_image_raises_on_missing_file() -> None:
 def test_preprocess_returns_binary_and_bgr() -> None:
     pre = preprocess(SAMPLE)
     assert set(pre) == {"binary", "bgr"}, f"pre 字段不对: {sorted(pre)}"
-    # 最终契约是 (H, W) 单通道;占位期 B 的 to_gray 原样返回三通道,
-    # 因此这里只查"维度合法",单通道的验收在 test_acceptance.test_binary_is_single_channel。
-    assert pre["binary"].ndim in (2, 3), "binary 必须是单通道或三通道图像"
+    # 冻结契约: binary 必须是单通道(H, W);三通道会让 layout 的投影计算出错
+    assert pre["binary"].ndim == 2, f"binary 应为 (H, W),实际 {pre['binary'].shape}"
     assert pre["binary"].dtype == np.uint8
     assert pre["bgr"].ndim == 3 and pre["bgr"].shape[2] == 3
 
