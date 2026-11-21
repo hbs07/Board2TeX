@@ -30,6 +30,7 @@ class ImageDialog(QDialog):
         self.setWindowTitle(title)
         self.resize(980, 760)
         self._pixmap = pixmap
+        self._dpr = float(self.devicePixelRatioF() or 1.0)
         self._scale = 1.0
 
         layout = QVBoxLayout(self)
@@ -87,7 +88,7 @@ class ImageDialog(QDialog):
         self._scroll.setWidget(self._host)
         layout.addWidget(self._scroll, 1)
 
-        self._scale = min(1.0, 900 / max(pixmap.width(), 1))
+        self._scale = min(1.0, (900 * self._dpr) / max(pixmap.width(), 1))
         self._render()
 
     def _set_scale(self, value: float) -> None:
@@ -99,19 +100,19 @@ class ImageDialog(QDialog):
         if self._pixmap.isNull():
             return
         scale = min(
-            viewport.width() / self._pixmap.width(),
-            viewport.height() / self._pixmap.height(),
-            1.0,                       # 不放大,避免糊
+            (viewport.width() * self._dpr) / self._pixmap.width(),
+            (viewport.height() * self._dpr) / self._pixmap.height(),
+            self._dpr,                 # 最多 1 图像像素 : 1 屏幕像素,不放大
         )
         self._set_scale(scale)
 
     def _render(self) -> None:
+        pixel_w = max(int(self._pixmap.width() * self._scale), 1)
+        pixel_h = max(int(self._pixmap.height() * self._scale), 1)
         pixmap = self._pixmap.scaled(
-            max(int(self._pixmap.width() * self._scale), 1),
-            max(int(self._pixmap.height() * self._scale), 1),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
+            pixel_w, pixel_h, Qt.KeepAspectRatio, Qt.SmoothTransformation
         )
+        pixmap.setDevicePixelRatio(self._dpr)
         self._page.setPixmap(pixmap)
         self._zoom_label.setText(f"{self._scale * 100:.0f}%")
 

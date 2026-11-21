@@ -17,7 +17,6 @@ from __future__ import annotations
 import glob
 import os
 import shutil
-import subprocess
 
 # 必须先于 PyQt5 导入(原因见 gui/torch_preload.py)
 from gui import torch_preload  # noqa: F401
@@ -29,7 +28,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from gui.exporter import compile_pdf, has_pdflatex, has_xelatex
+from gui.exporter import compile_pdf, has_pdflatex, has_xelatex, run_hidden
 
 PREVIEW_DIR = os.path.join("data", "preview")
 PAGE_DPI = 200          # 渲染精度: 200dpi 保证放大/缩小时字口仍然干净
@@ -90,7 +89,7 @@ def render_pdf_pages(pdf_path: str, out_dir: str = PREVIEW_DIR,
     else:
         cmd += ["-r", str(dpi)]
     cmd += [pdf_path.replace("\\", "/"), prefix.replace("\\", "/")]
-    subprocess.run(cmd, check=False, capture_output=True)
+    run_hidden(cmd, check=False, capture_output=True)
 
     pages = sorted(glob.glob(os.path.join(out_dir, "page-*.png")), key=_page_number)
     if not pages:
@@ -114,8 +113,9 @@ def create_preview_dialog(parent, doc: dict) -> QDialog:
 
     QApplication.setOverrideCursor(Qt.WaitCursor)
     try:
+        dpr = parent.devicePixelRatioF() if parent is not None else 1.0
         pdf_path = export_preview_pdf(doc)
-        pages = render_pdf_pages(pdf_path, width_px=PAGE_WIDTH)
+        pages = render_pdf_pages(pdf_path, width_px=int(PAGE_WIDTH * dpr))
     finally:
         QApplication.restoreOverrideCursor()
 
@@ -153,7 +153,8 @@ def create_preview_dialog(parent, doc: dict) -> QDialog:
         page.setObjectName("previewPage")
         page.setAlignment(Qt.AlignCenter)
         pixmap = QPixmap(page_path)
-        page.setPixmap(pixmap)      # 已按 PAGE_WIDTH 渲染,1:1 上屏,不再二次缩放
+        pixmap.setDevicePixelRatio(dpr)   # 按物理像素渲染,逻辑尺寸仍是 PAGE_WIDTH
+        page.setPixmap(pixmap)
         host_layout.addWidget(page)
 
     host_layout.addStretch()

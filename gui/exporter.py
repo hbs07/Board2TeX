@@ -23,6 +23,17 @@ import shutil
 import subprocess
 
 
+def run_hidden(cmd, **kwargs):
+    """跑外部命令,Windows 下不弹黑色控制台窗口。
+
+    GUI 用 pythonw 启动时没有控制台,但 xelatex / pdftoppm 是控制台程序,
+    不隐藏的话每次编译都会闪一个黑框。
+    """
+    if os.name == "nt":
+        kwargs.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
+    return subprocess.run(cmd, **kwargs)
+
+
 def has_xelatex() -> bool:
     """检测本机是否安装 xelatex。GUI 在导出前应先检查并友好提示。"""
     return shutil.which("xelatex") is not None
@@ -52,7 +63,7 @@ def compile_pdf(tex_path: str, out_dir: str, engine: str = "xelatex",
     # TeX 会把反斜杠当控制符,统一转成正斜杠(Windows 下也接受 /)
     tex_arg = tex_path.replace("\\", "/")
     out_arg = out_dir.replace("\\", "/")
-    subprocess.run(
+    run_hidden(
         [engine, "-interaction=nonstopmode",
          "-output-directory", out_arg, tex_arg],
         check=False,

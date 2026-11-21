@@ -211,7 +211,7 @@ class PreviewPane(QFrame):
 
         QThreadPool.globalInstance().start(
             _CompileTask(self._generation, self._tex, out_dir,
-                         self._target_width(), self._signals)
+                         self._target_pixel_width(), self._signals)
         )
 
     def _clean_old_dirs(self, keep: str) -> None:
@@ -266,35 +266,44 @@ class PreviewPane(QFrame):
         self._host_layout.addStretch()
 
     def _target_width(self) -> int:
-        """当前应该按多少像素宽渲染/显示(栏宽 × 缩放)。"""
+        """当前应该按多少"逻辑像素"宽显示(栏宽 × 缩放)。"""
         fit_width = max(self._scroll.viewport().width() - 30, MIN_PANE_WIDTH)
         return max(int(fit_width * self._zoom), 50)
 
+    def _dpr(self) -> float:
+        """屏幕缩放比(Windows 125%/150%/200% 时 >1)。"""
+        return float(self.devicePixelRatioF() or 1.0)
+
+    def _target_pixel_width(self) -> int:
+        """实际渲染用的物理像素宽 = 逻辑宽 × DPR,否则高分屏会被放大而发糊。"""
+        return max(int(self._target_width() * self._dpr()), 50)
+
     def _render_pages(self):
         self._clear_pages()
-        target = self._target_width()
+        dpr = self._dpr()
+        target_px = self._target_pixel_width()
         for pixmap in self._pixmaps:
+            if pixmap.width() == target_px:
+                pm = pixmap                      # 1:1,最清晰
+            else:
+                pm = pixmap.scaledToWidth(target_px, Qt.SmoothTransformation)
+            pm.setDevicePixelRatio(dpr)          # 逻辑尺寸 = 物理宽 / dpr
             label = QLabel()
             label.setObjectName("livePage")
             label.setAlignment(Qt.AlignCenter)
-            if pixmap.width() == target:
-                label.setPixmap(pixmap)          # 1:1,最清晰
-            else:
-                label.setPixmap(
-                    pixmap.scaledToWidth(target, Qt.SmoothTransformation)
-                )
+            label.setPixmap(pm)
             self._host_layout.insertWidget(self._host_layout.count() - 1, label)
 
         # 尺寸变了: 先缩放顶上,停手后再按目标宽度重渲染(1:1 最清晰)
-        if self._pdf_path and abs(self._rendered_width - target) > 8:
+        if self._pdf_path and abs(self._rendered_width - target_px) > int(8 * dpr):
             self._sharpen_timer.start()
 
     def _sharpen(self):
         """按当前显示宽度重新渲染 PDF 页面,消除二次缩放造成的发虚。"""
         if not self._pdf_path or not self._page_dir:
             return
-        target = self._target_width()
-        if abs(self._rendered_width - target) <= 8:
+        target = self._target_pixel_width()
+        if abs(self._rendered_width - target) <= int(8 * self._dpr()):
             return
         try:
             pages = render_pdf_pages(
