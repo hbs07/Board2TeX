@@ -129,16 +129,11 @@ QPushButton[class="accent"]:hover {{
 }}
 
 /* ---------------------------------------------------------------- 图像区 */
-QLabel#imageCanvas {{
-    background: #F8FAFC;
-    border: 1px dashed #CBD5E1;
-    border-radius: 10px;
-    color: {COLORS["faint"]};
-    font-size: 13px;
-}}
-QLabel#imageCanvas[filled="true"] {{
-    background: #FFFFFF;
+QLabel#imagePage {{
+    background: white;
     border: 1px solid {COLORS["border"]};
+    border-radius: 10px;
+    padding: 4px;
 }}
 
 /* ---------------------------------------------------------------- 编辑区 */

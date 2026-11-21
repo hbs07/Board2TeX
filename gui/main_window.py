@@ -4,24 +4,23 @@
 验证命令(会弹出窗口,人工确认):
     python -m gui.main_window
 期望结果:
-    标题 Board2TeX 的窗口打开:左侧图像区 + 右侧编辑区 + 顶部 5 个按钮;
-    「导入图片」能选图并显示;其余按钮在未识别时给出提示,不崩溃。
+    窗口打开:左侧"识别结果"编辑区 + 右侧"编译预览"实时预览;
+    顶部按钮: 导入图片 / 查看原图 / 运行识别 / 导出 .tex / 导出 PDF /
+    存入错题本 / 错题本。
 
 AI 辅助说明: 见 README「诚信声明」。
 
-A 已就绪(D 可以直接用):
-    - self.image_label : 显示图像的 QLabel(左);
-    - self.editor_area : 右侧滚动区,里面 self.editor_layout 可加控件;
-    - self.doc / self.pre / self.regions : 识别结果(数据结构见冻结接口);
-    - 7 个按钮已接线:导入图片 / 运行识别 / 预览 / 导出 .tex / 导出 PDF /
-      存入错题本 / 错题本;
+布局(2026-11-21 调整):
+    - 主区域两栏各占一半: 左=编辑区,右=实时预览;
+    - 原图不常驻,点「查看原图」弹窗查看(可缩放);
+    - self.editor_area / self.editor_layout : 编辑区容器,show_blocks() 往里加行;
+    - self.doc / self.pre / self.regions : 识别结果(数据结构见冻结接口)。
 
-编辑区实现(2026-11-21 接入):
+编辑区实现:
     1. show_blocks(): 把 self.doc["blocks"] 渲染成一行一个输入框,低置信度标红;
-    2. _on_block_edited(): 输入框改动实时写回 block["latex"];
-    3. on_preview(): 预览当前 blocks 拼出的正文;
-    4. 导出前统一 _rebuild_tex(),保证导出的是改过的版本;
-    5. 错题本: 存入/查看/按编号删除,数据库在 vault/board2tex.db。
+    2. _on_block_edited(): 输入框改动实时写回 block["latex"],并触发右侧预览;
+    3. 导出前统一 _rebuild_tex(),保证导出的是改过的版本;
+    4. 错题本: 存入/查看/按编号删除,数据库在 vault/board2tex.db。
 """
 
 from __future__ import annotations
@@ -117,8 +116,8 @@ class MainWindow(QMainWindow):
         btn_row.setSpacing(8)
         for text, slot, role, tip in [
             ("导入图片", self.on_import, "", "选择一张板书照片(png / jpg / bmp)"),
+            ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放)"),
             ("运行识别", self.on_run, "primary", "预处理 → 切行 → 识别 → 合成;首次会加载模型"),
-            ("预览", self.on_preview, "", "查看当前编辑后的正文"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
             ("存入错题本", self.on_save_problem, "", "把当前整篇 LaTeX 存入 SQLite 错题本"),
@@ -134,25 +133,7 @@ class MainWindow(QMainWindow):
         btn_row.addStretch()
         root.addLayout(btn_row)
 
-        # ---- 左卡片: 图像显示区 ----
-        left_card = QFrame()
-        left_card.setObjectName("card")
-        left_layout = QVBoxLayout(left_card)
-        left_layout.setContentsMargins(14, 12, 14, 14)
-        left_layout.setSpacing(8)
-
-        left_title = QLabel("板书预览")
-        left_title.setObjectName("cardTitle")
-        self.left_title = left_title
-        left_layout.addWidget(left_title)
-
-        self.image_label = QLabel("先点「导入图片」,再「运行识别」")
-        self.image_label.setObjectName("imageCanvas")
-        self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setMinimumSize(520, 400)
-        left_layout.addWidget(self.image_label, 1)
-
-        # ---- 右卡片: 编辑区 ----
+        # ---- 左卡片: 编辑区(占一半) ----
         right_card = QFrame()
         right_card.setObjectName("card")
         right_layout = QVBoxLayout(right_card)
@@ -177,7 +158,7 @@ class MainWindow(QMainWindow):
         self.editor_layout.setAlignment(Qt.AlignTop)
 
         self._editor_hint = QLabel(
-            "识别结果会显示在这里,一行一个输入框。\n改完直接「预览」或「导出」。"
+            "识别结果会显示在这里,一行一个输入框。\n改完直接「导出」,右侧会实时编译。"
         )
         self._editor_hint.setObjectName("legend")
         self._editor_hint.setWordWrap(True)
@@ -185,21 +166,18 @@ class MainWindow(QMainWindow):
         self.editor_area.setWidget(editor_host)
         right_layout.addWidget(self.editor_area, 1)
 
-        # 第三栏: 实时编译预览(可拖动分隔条调整宽度)
+        # ---- 右卡片: 实时编译预览(占一半) ----
         self.preview_pane = PreviewPane(self, on_open=self.on_preview)
         splitter = QSplitter(Qt.Horizontal)
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(10)
-        splitter.addWidget(left_card)
         splitter.addWidget(right_card)
         splitter.addWidget(self.preview_pane)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 3)
-        splitter.setStretchFactor(2, 4)
-        splitter.setSizes([280, 460, 620])
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([700, 700])
         root.addWidget(splitter, 1)
 
-        self._add_card_shadow(left_card)
         self._add_card_shadow(right_card)
 
         self.statusBar().showMessage("就绪")
@@ -230,34 +208,7 @@ class MainWindow(QMainWindow):
         card.setGraphicsEffect(effect)
 
     # ------------------------------------------------------------------
-    # 图像上屏(A)
-    # ------------------------------------------------------------------
-    def _show_image(self, img, note: str = ""):
-        self._image_pixmap = ndarray_to_qpixmap(img)
-        self._fit_image()
-        # 有图之后去掉虚线占位框(样式见 gui/style.py 的 [filled="true"])
-        if self.image_label.property("filled") != "true":
-            self.image_label.setProperty("filled", "true")
-            self.image_label.style().unpolish(self.image_label)
-            self.image_label.style().polish(self.image_label)
-        if note:
-            self.statusBar().showMessage(note)
-
-    def _fit_image(self):
-        """按当前 label 尺寸等比缩放原图(窗口/分隔条变化时也保持完整可见)。"""
-        if self._image_pixmap is None:
-            return
-        scaled = self._image_pixmap.scaled(
-            self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-        self.image_label.setPixmap(scaled)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._fit_image()
-
-    # ------------------------------------------------------------------
-    # 右侧编辑区(D 的接入点)
+    # 编辑区
     # ------------------------------------------------------------------
     def show_blocks(self):
         """把 doc["blocks"] 渲染成"一行一个输入框",改哪个就写回哪个 Block。"""
@@ -265,7 +216,7 @@ class MainWindow(QMainWindow):
 
         if not self.doc:
             hint = QLabel(
-                "识别结果会显示在这里,一行一个输入框。\n改完直接「预览」或「导出」。"
+                "识别结果会显示在这里,一行一个输入框。\n改完直接「导出」,右侧会实时编译。"
             )
             hint.setObjectName("legend")
             hint.setWordWrap(True)
@@ -389,7 +340,6 @@ class MainWindow(QMainWindow):
         if not path:
             return
         self.image_path = path
-        self.left_title.setText(f"板书预览 · {os.path.basename(path)}")
 
         # 换图后旧结果全部作废,避免"图是新的、编辑区还是上一张"的错位
         self.pre = None
@@ -399,7 +349,20 @@ class MainWindow(QMainWindow):
         self.preview_pane.clear()
         self.right_title.setText("识别结果 · 可直接编辑")
 
-        self._show_image(load_image(path), f"已导入: {os.path.basename(path)}")
+        # 原图只在弹窗里看,这里保存 QPixmap 供「查看原图」使用
+        self._image_pixmap = ndarray_to_qpixmap(load_image(path))
+        self.statusBar().showMessage(
+            f"已导入: {os.path.basename(path)}(可点「查看原图」)"
+        )
+
+    def on_view_image(self):
+        if self._image_pixmap is None:
+            QMessageBox.information(self, "提示", "请先导入图片")
+            return
+        from gui.image_view import show_image_dialog
+
+        title = f"板书原图 · {os.path.basename(self.image_path or '')}"
+        show_image_dialog(self, self._image_pixmap, title)
 
     def on_run(self):
         if not self.image_path:
@@ -411,10 +374,6 @@ class MainWindow(QMainWindow):
             self.pre, self.regions, self.doc = pipeline(self.image_path)
         finally:
             self.setEnabled(True)
-        self._show_image(
-            self.pre["bgr"],
-            f"识别完成: {len(self.regions)} 个区域, {len(self.doc['blocks'])} 个块",
-        )
         self.show_blocks()
         n_formula = sum(1 for b in self.doc["blocks"] if b["type"] == "formula")
         self.right_title.setText(

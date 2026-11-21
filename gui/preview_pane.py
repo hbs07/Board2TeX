@@ -241,7 +241,7 @@ class PreviewPane(QFrame):
 
     def _render_pages(self):
         self._clear_pages()
-        fit_width = max(self._scroll.viewport().width() - 16, MIN_PANE_WIDTH)
+        fit_width = max(self._scroll.viewport().width() - 30, MIN_PANE_WIDTH)
         width = int(fit_width * self._zoom)
         for pixmap in self._pixmaps:
             label = QLabel()

@@ -205,8 +205,9 @@ def test_main_window_constructs_offscreen(monkeypatch) -> None:
     try:
         assert window.image_path is None
         assert window.doc is None
-        assert window.image_label is not None
+        assert window._image_pixmap is None
         assert window.editor_layout is not None
+        assert window.preview_pane is not None
     finally:
         window.close()
 
