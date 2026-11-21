@@ -70,12 +70,25 @@ python -m pytest -q                                # 契约测试 + 验收看板
 ## 测试
 
 ```powershell
-python -m pytest -q
+python -m pytest -q            # 快速套件:不加载模型,约 5 秒
+python -m pytest -q -m slow    # 完整套件:真跑 OCR/公式模型,约 40 秒
 ```
 
 - `tests/test_contracts.py`:冻结接口的结构守卫。**红了说明有人改坏了接口**,先找组长。
 - `tests/test_acceptance.py`:验收看板,每个测试对应一位组员的一条验收标准。
   - `passed` = 已达标;`xfailed` = 负责人还没做(正常,不是 bug);`xpassed` = 做完了,提醒组长删掉 xfail 标记;`failed` = 做了但没达标。
+- `tests/test_eval_metrics.py`:评估指标(CER/公式匹配/可用率)的单元测试。
+
+## 评估
+
+```powershell
+python tools/make_eval_assets.py        # 第一次:生成合成板书 + 逐行真值
+python eval/run_eval.py                 # 自动指标 -> data/eval/report.md
+python eval/run_eval.py --mode manual   # 实拍可用率(按 eval/labels.csv)
+```
+
+自动指标跑的是 `assets/eval/` 里的**合成**板书(白底、印刷体、无透视),用来验证算法链路;
+真实照片的效果请按 `eval/labels.example.csv` 的格式记录人工试跑结果,用 `--mode manual` 统计。
 
 ## MVP 边界(第一版)
 

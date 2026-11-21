@@ -18,6 +18,7 @@ env/
 data/
 *.db
 preview.png
+eval/labels.csv
 *.aux
 *.log
 *.out

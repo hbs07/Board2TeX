@@ -1,0 +1,85 @@
+{
+  "board_01.png": [
+    {
+      "order": 0,
+      "type": "text",
+      "text": "Derivative Rules"
+    },
+    {
+      "order": 1,
+      "type": "text",
+      "text": "Given two functions f and g, we have:"
+    },
+    {
+      "order": 2,
+      "type": "formula",
+      "latex": "\\frac{d}{dx}x^{2}=2x"
+    },
+    {
+      "order": 3,
+      "type": "formula",
+      "latex": "\\int_{0}^{1}x^{2}\\,dx=\\frac{1}{3}"
+    },
+    {
+      "order": 4,
+      "type": "text",
+      "text": "The chain rule composes the two derivatives"
+    }
+  ],
+  "board_02.png": [
+    {
+      "order": 0,
+      "type": "text",
+      "text": "Matrix Multiplication"
+    },
+    {
+      "order": 1,
+      "type": "text",
+      "text": "The product of two matrices is defined as:"
+    },
+    {
+      "order": 2,
+      "type": "formula",
+      "latex": "(AB)_{ij}=\\sum_{k}A_{ik}B_{kj}"
+    },
+    {
+      "order": 3,
+      "type": "text",
+      "text": "The identity matrix leaves every vector unchanged"
+    }
+  ],
+  "board_03.png": [
+    {
+      "order": 0,
+      "type": "text",
+      "text": "Limits"
+    },
+    {
+      "order": 1,
+      "type": "formula",
+      "latex": "\\lim_{x\\to 0}\\frac{\\sin x}{x}=1"
+    },
+    {
+      "order": 2,
+      "type": "text",
+      "text": "A function is continuous when the limit equals the value"
+    },
+    {
+      "order": 3,
+      "type": "formula",
+      "latex": "f'(x)=\\lim_{h\\to 0}\\frac{f(x+h)-f(x)}{h}"
+    }
+  ],
+  "board_04.png": [
+    {
+      "order": 0,
+      "type": "text",
+      "text": "Euler Identity"
+    },
+    {
+      "order": 1,
+      "type": "formula",
+      "latex": "e^{i\\pi}+1=0"
+    }
+  ]
+}
