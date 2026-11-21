@@ -68,7 +68,31 @@ def split_lines(bin_img: np.ndarray, min_h: int = 28) -> list[tuple[int, int]]:
     if start is not None:                  # 图像底部还有一行没收尾
         if len(row_proj) - start >= min_h:
             lines.append((start, len(row_proj)))
-    return lines
+    return _merge_fragments(lines)
+
+
+def _merge_fragments(lines: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """把"上标/下标被切出来"的碎片并回上一行。
+
+    实测案例: `\\sum_{k}` 的 k 与 Σ 之间有一行全空,
+    会被切成独立的一段(高 33px、宽 25px);不合并就会多出一个 Region,
+    后面的 order 全部错位。
+    合并条件(两条都满足,避免误并真正的短行):
+      - 与上一段的垂直间隙 <= max(6, 0.4 * 上一段高度);
+      - 本段高度 <= 0.6 * 上一段高度。
+    """
+    merged: list[tuple[int, int]] = []
+    for y0, y1 in lines:
+        if merged:
+            py0, py1 = merged[-1]
+            gap = y0 - py1
+            prev_h = py1 - py0
+            cur_h = y1 - y0
+            if gap <= max(6, int(0.4 * prev_h)) and cur_h <= 0.6 * prev_h:
+                merged[-1] = (py0, y1)      # 并进上一段,bbox 向下扩
+                continue
+        merged.append((y0, y1))
+    return merged
 
 
 def analyze_layout(binary: np.ndarray) -> list[dict]:
