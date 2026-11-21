@@ -83,14 +83,16 @@ def _parse_2x(out):
 
 
 def _run_ocr(ocr, img):
-    """统一调用: 先试 3.x 的 predict,再回退 2.x 的 ocr。"""
+    """统一调用: 有 predict 就用 3.x 的接口,没有 predict 才回退 2.x 的 ocr。
+
+    踩坑记录(2026-11-21,A 评审时发现):
+        PaddleOCR 3.x 里 .ocr() 只是 predict 的兼容壳,不接受 cls 参数;
+        原先"没识别到文字就回退 2.x"的写法,在空图/空白行上会抛
+        TypeError: predict() got an unexpected keyword argument 'cls'。
+        空结果是正常情况(blank 行),必须安静返回空列表,不能当成版本问题。
+    """
     if hasattr(ocr, "predict"):
-        try:
-            texts, scores = _parse_3x(ocr.predict(img))
-            if texts:
-                return texts, scores
-        except Exception:
-            pass
+        return _parse_3x(ocr.predict(img))
     return _parse_2x(ocr.ocr(img, cls=False))
 
 

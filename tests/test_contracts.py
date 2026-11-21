@@ -142,6 +142,30 @@ def test_build_body_returns_string() -> None:
     assert isinstance(build_body([]), str)
 
 
+# ---------------------------------------------------------------- 识别(C)
+
+
+class _FakeOcr3:
+    """假 3.x 引擎: predict 返回空结果,且 .ocr() 一旦被调用就抛错。
+
+    用来复现"空图被误判成 2.x 版本"的坑,不需要真的加载模型(快)。
+    """
+
+    def predict(self, img):
+        return [{"rec_texts": [], "rec_scores": []}]
+
+    def ocr(self, img, cls=False):
+        raise TypeError("predict() got an unexpected keyword argument 'cls'")
+
+
+def test_blank_region_returns_empty_text(monkeypatch) -> None:
+    from recog import ocr_engine
+
+    monkeypatch.setattr(ocr_engine, "_ocr", _FakeOcr3())
+    text, conf = ocr_engine.recognize_text(np.zeros((20, 100, 3), np.uint8))
+    assert (text, conf) == ("", 0.0), "空白行必须安静返回空结果,不能回退 2.x 而崩"
+
+
 # ---------------------------------------------------------------- 导出(A)
 
 
