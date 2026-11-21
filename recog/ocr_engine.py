@@ -106,7 +106,7 @@ def recognize_text(img):
     texts, scores = _run_ocr(ocr, img)
     if not texts:
         return "", 0.0
-    text = "".join(texts)
+    text = " ".join(t.strip() for t in texts if t.strip())
     conf = sum(scores) / len(scores) if scores else 0.0
     return text, conf
 
