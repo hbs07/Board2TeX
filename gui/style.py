@@ -250,6 +250,23 @@ QLabel#previewInfo {{
     color: {COLORS["muted"]};
     font-size: 12px;
 }}
+QLabel#previewStatus {{
+    color: {COLORS["faint"]};
+    font-size: 11px;
+}}
+QLabel#previewError {{
+    color: {COLORS["danger"]};
+    font-size: 11px;
+}}
+QLabel#livePage {{
+    background: white;
+    border: 1px solid {COLORS["border"]};
+    border-radius: 8px;
+    padding: 4px;
+}}
+QSplitter::handle {{
+    background: transparent;
+}}
 QScrollArea#previewScroll {{
     border: none;
     background: transparent;

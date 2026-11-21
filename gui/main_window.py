@@ -30,25 +30,20 @@ import os
 
 import numpy as np
 
-# Windows 踩坑(2026-11-21 实测): 先 import PyQt5 再 import torch,会报
-#   OSError: [WinError 1114] ... Error loading "torch\lib\c10.dll"
-# 反过来先 import torch 就正常。这一行必须留在所有 PyQt5 导入之前,
-# 别在"整理 import"时把它挪走,否则点「运行识别」会直接崩。
-try:
-    import torch  # noqa: F401  (只为提前加载 DLL,本文件不用它)
-except Exception:          # 没装 torch 或 DLL 加载失败:文字识别仍可用,公式识别会降级
-    pass
+# 必须先于 PyQt5 导入(原因见 gui/torch_preload.py 的说明与实测记录)
+from gui import torch_preload  # noqa: F401
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea,
-    QTextEdit, QVBoxLayout, QWidget,
+    QSplitter, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from config import TEXT_CONF_THRESHOLD
 from gui.exporter import compile_pdf, has_xelatex
+from gui.preview_pane import PreviewPane
 from main import pipeline
 from preprocess.pipeline import load_image
 
@@ -73,8 +68,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Board2TeX · 板书转 LaTeX")
-        self.resize(1100, 680)
-        self.setMinimumSize(1000, 620)
+        self.resize(1380, 800)
+        self.setMinimumSize(1120, 640)
 
         # ---- 识别结果状态(冻结接口的数据在这里流转) ----
         self.image_path: str | None = None
@@ -83,6 +78,7 @@ class MainWindow(QMainWindow):
         self.doc: dict | None = None       # {"blocks", "tex_source"}
         self.block_edits: dict[int, QLineEdit] = {}   # order -> 编辑框
         self._db = None                    # 错题本连接(懒加载)
+        self._image_pixmap = None          # 原图 QPixmap(窗口缩放时重新适配)
 
         self._build_ui()
 
@@ -189,11 +185,19 @@ class MainWindow(QMainWindow):
         self.editor_area.setWidget(editor_host)
         right_layout.addWidget(self.editor_area, 1)
 
-        content_row = QHBoxLayout()
-        content_row.setSpacing(14)
-        content_row.addWidget(left_card, 3)
-        content_row.addWidget(right_card, 2)
-        root.addLayout(content_row, 1)
+        # 第三栏: 实时编译预览(可拖动分隔条调整宽度)
+        self.preview_pane = PreviewPane(self, on_open=self.on_preview)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(10)
+        splitter.addWidget(left_card)
+        splitter.addWidget(right_card)
+        splitter.addWidget(self.preview_pane)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 4)
+        splitter.setSizes([380, 400, 480])
+        root.addWidget(splitter, 1)
 
         self._add_card_shadow(left_card)
         self._add_card_shadow(right_card)
@@ -229,12 +233,8 @@ class MainWindow(QMainWindow):
     # 图像上屏(A)
     # ------------------------------------------------------------------
     def _show_image(self, img, note: str = ""):
-        pixmap = ndarray_to_qpixmap(img)
-        scaled = pixmap.scaled(
-            self.image_label.size(), Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
-        )
-        self.image_label.setPixmap(scaled)
+        self._image_pixmap = ndarray_to_qpixmap(img)
+        self._fit_image()
         # 有图之后去掉虚线占位框(样式见 gui/style.py 的 [filled="true"])
         if self.image_label.property("filled") != "true":
             self.image_label.setProperty("filled", "true")
@@ -243,19 +243,33 @@ class MainWindow(QMainWindow):
         if note:
             self.statusBar().showMessage(note)
 
+    def _fit_image(self):
+        """按当前 label 尺寸等比缩放原图(窗口/分隔条变化时也保持完整可见)。"""
+        if self._image_pixmap is None:
+            return
+        scaled = self._image_pixmap.scaled(
+            self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        self.image_label.setPixmap(scaled)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_image()
+
     # ------------------------------------------------------------------
     # 右侧编辑区(D 的接入点)
     # ------------------------------------------------------------------
     def show_blocks(self):
         """把 doc["blocks"] 渲染成"一行一个输入框",改哪个就写回哪个 Block。"""
-        while self.editor_layout.count():
-            item = self.editor_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self.block_edits.clear()
+        self._clear_editor()
 
         if not self.doc:
+            hint = QLabel(
+                "识别结果会显示在这里,一行一个输入框。\n改完直接「预览」或「导出」。"
+            )
+            hint.setObjectName("legend")
+            hint.setWordWrap(True)
+            self.editor_layout.addWidget(hint)
             return
 
         for b in self.doc["blocks"]:
@@ -321,14 +335,25 @@ class MainWindow(QMainWindow):
         legend.setWordWrap(True)
         self.editor_layout.addWidget(legend)
 
+    def _clear_editor(self):
+        """清空右侧所有编辑行(换图/重新识别/无结果时用)。"""
+        while self.editor_layout.count():
+            item = self.editor_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.block_edits.clear()
+
     def _on_block_edited(self, order: int, text: str):
-        """编辑框一改,立刻写回 self.doc(导出/预览前再统一重建 tex)。"""
+        """编辑框一改: 写回 block,重建 tex,并触发实时预览(防抖)。"""
         if not self.doc:
             return
         for b in self.doc["blocks"]:
             if b["order"] == order:
                 b["latex"] = text
                 break
+        self._rebuild_tex()
+        self.preview_pane.schedule(self.doc["tex_source"])
 
     def _rebuild_tex(self):
         """用当前(可能已被人工修改的)blocks 重建 tex_source。"""
@@ -366,6 +391,15 @@ class MainWindow(QMainWindow):
             return
         self.image_path = path
         self.left_title.setText(f"板书预览 · {os.path.basename(path)}")
+
+        # 换图后旧结果全部作废,避免"图是新的、编辑区还是上一张"的错位
+        self.pre = None
+        self.regions = []
+        self.doc = None
+        self.show_blocks()
+        self.preview_pane.clear()
+        self.right_title.setText("识别结果 · 可直接编辑")
+
         self._show_image(load_image(path), f"已导入: {os.path.basename(path)}")
 
     def on_run(self):
@@ -390,6 +424,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"识别完成: {len(self.doc['blocks'])} 块,右侧可直接修改"
         )
+        self.preview_pane.compile_now(self.doc["tex_source"])
 
     def on_preview(self):
         if not self.doc:

@@ -19,6 +19,9 @@ import os
 import shutil
 import subprocess
 
+# 必须先于 PyQt5 导入(原因见 gui/torch_preload.py)
+from gui import torch_preload  # noqa: F401
+
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from PyQt5.QtWidgets import (
