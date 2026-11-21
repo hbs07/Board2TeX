@@ -122,6 +122,8 @@ $env:B2T_VLM_MODEL    = "Qwen"        # 需支持 image 输入
 
 - 提案与分工:`docs/01-proposal/`、`docs/02-roles/`
 - 期中汇报:`docs/03-report/`
+- 问题与改进记录(期末汇报素材):`docs/03-report/Board2TeX_问题与改进记录.md`
+- 评估报告:`docs/03-report/Board2TeX_评估报告.md`
 - AI 辅导指南(A/B/C/D 各一份,配合 AI 使用):`docs/04-ai-guides/`
 - 环境安装:`docs/05-setup/环境安装指南.md`
 - 协作规范:`.github/pull_request_template.md`(提 PR 时自动带出)
