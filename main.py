@@ -6,8 +6,7 @@
 期望结果:
     终端打印区域/块数量;data/exports/result.tex 生成;
     本机装有 xelatex 时 result.pdf 一并生成。
-    骨架阶段 layout 返回 0 个区域、正文为空,属预期;
-    B/C 填完各自模块后,同一条命令直接产出真实结果。
+    示例图 assets/test_text.png 有 5 行(3 行英文 + 2 行公式),应得到 5 个区域/块。
 
 AI 辅助说明: 见 README「诚信声明」。
 

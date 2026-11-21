@@ -6,8 +6,7 @@
 期望结果:
     终端打印 bgr / binary 的尺寸;data/preprocess_check/ 下生成
     bgr.png(缩放后原图)和 binary.png(二值图)。
-    B 填完 enhance 后,binary.png 应为"整页裁剪过的二值图";
-    骨架阶段 enhance 是占位实现,binary 与原图相同,属预期。
+    binary.png 应为"整页裁剪过的二值图"(只有 0/255,四周空白已裁掉)。
 
 AI 辅助说明: 见 README「诚信声明」。
 

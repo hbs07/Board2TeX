@@ -54,8 +54,8 @@ def binarize(gray: np.ndarray) -> np.ndarray:
     阈值参数填 0 表示让 Otsu 自己找,不要手调数字。
     验证: binary.png 里整张图只有黑白两色,没有中间灰。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§3.3 实现(两行)
-    return gray  # 占位: 原样返回
+    _, out = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return out
 
 
 def crop_content(bin_img: np.ndarray) -> np.ndarray:
@@ -73,8 +73,12 @@ def crop_content(bin_img: np.ndarray) -> np.ndarray:
 
     验证: crop.png 四边贴合内容,无大片空白边。
     """
-    # TODO(B): 参考《分工_B_版面分析.md》§3.4 实现(约 6 行)
-    return bin_img  # 占位: 原样返回
+    fg = bin_img < 128                    # True = 暗像素 = 字
+    rows = np.where(fg.any(axis=1))[0]
+    cols = np.where(fg.any(axis=0))[0]
+    if len(rows) == 0 or len(cols) == 0:
+        return bin_img                    # 全空图: 原样返回,不要崩
+    return bin_img[rows[0]:rows[-1] + 1, cols[0]:cols[-1] + 1]
 
 
 # ---------------------------------------------------------------------------
