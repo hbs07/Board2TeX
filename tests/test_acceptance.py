@@ -138,25 +138,32 @@ def test_escape_latex_handles_ocr_symbols() -> None:
     assert clean_latex(r"\left( x \right)") == "( x )"
 
 
-# ---------------------------------------------------------------- D: 错题本
+# ---------------------------------------------------------------- D: 笔记
 
 
-def test_vault_add_and_list(tmp_path) -> None:
-    """D 的验收:存一条错题,能查回来、能按课程筛选、能删。"""
-    from vault.db import add_problem, delete_problem, init_db, list_problems, search
+def test_notes_create_append_and_delete(tmp_path) -> None:
+    """D 的验收: 新建笔记、多次追加、读取正文、删除。"""
+    from vault.db import (append_to_note, create_note, delete_note, get_note,
+                          init_db, list_notes)
 
     con = init_db(str(tmp_path / "board2tex.db"))
     try:
-        add_problem(con, course="Calculus", tags=["limit", "ch1"],
-                    tex=r"$\lim_{x\to 0} x$", image_path="")
-        rows = list_problems(con)
-        assert len(rows) == 1
-        assert rows[0][1] == "Calculus"
-        assert rows[0][2] == "limit,ch1"
-        assert len(search(con, "Calculus")) == 1
-        assert len(search(con, "Other")) == 0
-        delete_problem(con, rows[0][0])
-        assert list_problems(con) == []
+        note_id = create_note(con, "高数 · 期中复习")
+        append_to_note(con, note_id, "A0\n\nA1")
+        append_to_note(con, note_id, "B0")
+
+        rows = list_notes(con)
+        assert len(rows) == 1 and rows[0][1] == "高数 · 期中复习"
+
+        note = get_note(con, note_id)
+        assert note is not None
+        title, body = note
+        assert title == "高数 · 期中复习"
+        assert "A0" in body and "B0" in body
+        assert body.count("\\newpage") == 1, "两次追加之间应有一个分页符"
+
+        delete_note(con, note_id)
+        assert list_notes(con) == []
     finally:
         con.close()
 

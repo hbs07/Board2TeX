@@ -5,8 +5,8 @@
     python -m gui.main_window
 期望结果:
     窗口打开:左侧"识别结果"编辑区 + 右侧"编译预览"实时预览;
-    顶部按钮: 导入图片 / 查看原图 / 运行识别 / 导出 .tex / 导出 PDF /
-    存入错题本 / 错题本。
+    顶部按钮: 导入图片 / 追加图片 / 查看原图 / 调整顺序 / 再次识别 /
+    导出 .tex / 导出 PDF / 存入笔记 / 笔记。
 
 AI 辅助说明: 见 README「诚信声明」。
 
@@ -20,7 +20,7 @@ AI 辅助说明: 见 README「诚信声明」。
     1. show_blocks(): 把 self.doc["blocks"] 渲染成一行一个输入框,低置信度标红;
     2. _on_block_edited(): 输入框改动实时写回 block["latex"],并触发右侧预览;
     3. 导出前统一 _rebuild_tex(),保证导出的是改过的版本;
-    4. 错题本: 存入/查看/按编号删除,数据库在 vault/board2tex.db。
+    4. 笔记: 存入/新建/追加/预览/删除,数据库在 vault/board2tex.db。
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ from PyQt5.QtGui import QIcon, QImage, QPixmap
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QFileDialog, QFrame, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QMainWindow, QMessageBox, QPushButton, QScrollArea,
-    QSplitter, QTextEdit, QVBoxLayout, QWidget,
+    QSplitter, QVBoxLayout, QWidget,
 )
 
 from config import TEXT_CONF_THRESHOLD
@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         self.doc: dict | None = None       # 合并后的 {"blocks", "tex_source"}
         self._page_sizes: list[int] = []   # 每张图贡献多少 Block(分页依据)
         self.block_edits: dict[int, QLineEdit] = {}   # order -> 编辑框
-        self._db = None                    # 错题本连接(懒加载)
+        self._db = None                    # 笔记库连接(懒加载)
         self._image_pixmaps: list[QPixmap] = []       # 原图,供「查看原图」使用
 
         self._build_ui()
@@ -134,12 +134,11 @@ class MainWindow(QMainWindow):
             ("追加图片", self.on_add_images, "", "在现有板书后面继续添加,只识别新图片"),
             ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
             ("调整顺序", self.on_reorder_images, "", "调整多张板书的合并顺序"),
-            ("运行识别", self.on_run, "primary", "本地识别: 预处理 → 切行 → PaddleOCR/pix2tex"),
-            ("AI 识别", self.on_ai_recognize, "accent", "视觉大模型识别手写/双栏板书(需配置 API)"),
+            ("再次识别", self.on_recognize, "primary", "重新识别当前所有图片:已配置 API 用 AI,否则用本地模型"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
-            ("存入错题本", self.on_save_problem, "", "把当前整篇 LaTeX 存入 SQLite 错题本"),
-            ("错题本", self.on_show_vault, "", "查看 / 删除已保存的错题"),
+            ("存入笔记", self.on_save_note, "", "把当前内容追加到某份笔记(可新建)"),
+            ("笔记", self.on_show_notes, "", "新建 / 预览 / 删除笔记"),
         ]:
             btn = QPushButton(text)
             if role:
@@ -386,15 +385,11 @@ class MainWindow(QMainWindow):
         self._rebuild_tex()
         self.preview_pane.schedule(self.doc["tex_source"])
 
-    def _rebuild_tex(self):
-        """用当前(可能已被人工修改的)blocks 重建 tex_source。
-
-        多张图时按 _page_sizes 分段: 每张一段,段间插 \\newpage。
-        """
+    def _current_body(self) -> str:
+        """当前编辑结果的 LaTeX 正文(多图按页用 \\newpage 分隔)。"""
         if not self.doc:
-            return
+            return ""
         from compose.builder import build_body
-        from compose.template import TEMPLATE
 
         blocks = self.doc["blocks"]
         sizes = self._page_sizes or ([len(blocks)] if blocks else [])
@@ -405,11 +400,18 @@ class MainWindow(QMainWindow):
             start += size
             if part:
                 pages.append(build_body(part))
-        body = "\n\n\\newpage\n\n".join(p for p in pages if p.strip())
-        self.doc["tex_source"] = TEMPLATE.replace("% BODY", body)
+        return "\n\n\\newpage\n\n".join(p for p in pages if p.strip())
+
+    def _rebuild_tex(self):
+        """用当前(可能已被人工修改的)blocks 重建 tex_source。"""
+        if not self.doc:
+            return
+        from compose.template import TEMPLATE
+
+        self.doc["tex_source"] = TEMPLATE.replace("% BODY", self._current_body())
 
     def _get_db(self):
-        """懒加载错题本连接(第一次用时才建库)。"""
+        """懒加载笔记库连接(第一次使用时才建库)。"""
         if self._db is None:
             from vault.db import init_db
 
@@ -570,6 +572,18 @@ class MainWindow(QMainWindow):
 
         titles = [os.path.basename(p) for p in self.image_paths]
         show_image_dialog(self, self._image_pixmaps, titles)
+
+    def on_recognize(self):
+        """再次识别: 已配置 API 用 AI,否则用本地模型。"""
+        if not self.image_paths:
+            QMessageBox.information(self, "提示", "请先导入图片")
+            return
+        from recog import vlm
+
+        if vlm.is_configured():
+            self.on_ai_recognize()
+        else:
+            self.on_run()
 
     def on_run(self):
         if not self.image_paths:
@@ -757,70 +771,62 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"已导出: {pdf}")
 
     # ------------------------------------------------------------------
-    # 错题本(D)
+    # 笔记(D)
     # ------------------------------------------------------------------
-    def on_save_problem(self):
+    def on_save_note(self):
         if not self.doc:
-            QMessageBox.information(self, "提示", "请先运行识别")
+            QMessageBox.information(self, "提示", "请先识别")
             return
-        self._rebuild_tex()
+        body = self._current_body()
+        if not body.strip():
+            QMessageBox.information(self, "提示", "当前没有可保存的正文")
+            return
 
-        course, ok = QInputDialog.getText(self, "存入错题本", "课程名(如 Calculus):")
-        if not ok or not course.strip():
+        try:
+            from vault.db import append_to_note, create_note, list_notes
+
+            con = self._get_db()
+            notes = list_notes(con)
+        except Exception as exc:
+            QMessageBox.critical(self, "读取笔记失败", str(exc))
             return
-        tags_text, ok = QInputDialog.getText(
-            self, "存入错题本", "标签(逗号分隔,可留空):"
+
+        labels = [f"{title}    ({updated})" for _, title, updated in notes]
+        new_label = "＋ 新建笔记…"
+        choice, ok = QInputDialog.getItem(
+            self, "存入笔记", "选择要追加到的笔记:",
+            labels + [new_label], 0, False,
         )
         if not ok:
             return
-        tags = [t.strip() for t in tags_text.replace("，", ",").split(",") if t.strip()]
+
+        if choice == new_label:
+            title, ok = QInputDialog.getText(self, "新建笔记", "笔记名称:")
+            if not ok:
+                return
+            note_id = create_note(con, title)
+            note_title = title.strip() or "未命名笔记"
+        else:
+            index = labels.index(choice)
+            note_id, note_title, _ = notes[index]
 
         try:
-            from vault.db import add_problem
-
-            add_problem(self._get_db(), course.strip(), tags,
-                        self.doc["tex_source"], ";".join(self.image_paths))
-        except Exception as exc:                    # 数据库异常不能弄崩界面
+            append_to_note(con, note_id, body)
+        except Exception as exc:
             QMessageBox.critical(self, "保存失败", str(exc))
             return
-        self.statusBar().showMessage(f"已存入错题本: {course.strip()}")
+        self.statusBar().showMessage(f"已追加到笔记《{note_title}》")
 
-    def on_show_vault(self):
+    def on_show_notes(self):
         try:
-            from vault.db import delete_problem, list_problems
-
-            rows = list_problems(self._get_db())
+            con = self._get_db()
         except Exception as exc:
-            QMessageBox.critical(self, "读取失败", str(exc))
+            QMessageBox.critical(self, "打开笔记失败", str(exc))
             return
 
-        if not rows:
-            QMessageBox.information(self, "错题本", "还没有记录,先识别一道题再「存入错题本」")
-            return
+        from gui.notes_dialog import NotesDialog
 
-        text = "\n".join(
-            f"#{r[0]}  [{r[1]}]  {r[2] or '(无标签)'}  {r[5]}" for r in rows
-        )
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"错题本({len(rows)} 条)")
-        dialog.resize(720, 480)
-        layout = QVBoxLayout(dialog)
-        view = QTextEdit()
-        view.setReadOnly(True)
-        view.setPlainText(text)
-        layout.addWidget(view)
-        dialog.exec_()
-
-        pid, ok = QInputDialog.getInt(
-            self, "删除记录", "要删除的编号(点 Cancel 跳过):", 0, 0, 10 ** 9
-        )
-        if ok and pid > 0:
-            try:
-                delete_problem(self._get_db(), pid)
-            except Exception as exc:
-                QMessageBox.critical(self, "删除失败", str(exc))
-                return
-            self.statusBar().showMessage(f"已删除记录 #{pid}")
+        NotesDialog(self, con).exec_()
 
 
 if __name__ == "__main__":

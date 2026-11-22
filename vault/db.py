@@ -1,46 +1,37 @@
 # -*- coding: utf-8 -*-
-"""vault/db.py —— SQLite 错题本(主责: D 李若宸;骨架: A 提供)
+"""vault/db.py —— 笔记库(SQLite)(主责: D 李若宸)
 
-验证命令(已实现,单测在 tests/test_acceptance.py):
-    python -m pytest -q -k vault
-期望结果: 增/查/按课程筛选/删除 全部通过。
+一个"笔记"= 一份可以不断追加的 LaTeX 正文;主界面识别完可以存入/追加,
+笔记窗口里可以新建、预览、删除。
+
+表结构(2026-11-22 起):
+    notes(id, title, body, created_at, updated_at)
+    body 只存 LaTeX 正文(不含模板头尾),预览时再套模板。
+
+验证命令:
+    python -m pytest -q -k notes
 
 AI 辅助说明: 见 README「诚信声明」。
-
-表结构(冻结接口,不许改字段名):
-    problems(id, course, tags, tex, image_path, created_at)
-
-设计约定:
-    - tags 存库前用英文逗号 join 成一个字符串(如 "极限,第一章"),查出来再 split;
-    - course 参数: None/不传 = 不筛选,返回全部(参考文档 §3.2 的 search);
-    - 每次写操作(增/删)后 con.commit(),别忘了;
-    - 桌面单进程使用,连接由调用方(init_db)返回并保管,用完在 GUI 退出时 close。
-
-与其他模块的关系:
-    - 调用方是 D 自己的 GUI 控件("存入错题本"按钮、错题本列表页);
-    - 不在识别主链路上,未实现时调用会抛出明确的 NotImplementedError。
 """
 
 from __future__ import annotations
 
 import sqlite3
 
+SEP = "\n\n\\newpage\n\n"      # 多次追加之间的分页符
+
 
 def init_db(path: str = "vault/board2tex.db") -> sqlite3.Connection:
-    """连接(必要时创建)SQLite 库并建表,返回连接对象。
-
-    CREATE TABLE IF NOT EXISTS 保证重复调用不报错。
-    """
+    """连接(必要时创建)SQLite 库并建表,返回连接对象。"""
     con = sqlite3.connect(path)
     con.execute(
         """
-        CREATE TABLE IF NOT EXISTS problems (
+        CREATE TABLE IF NOT EXISTS notes (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            course     TEXT NOT NULL,
-            tags       TEXT NOT NULL DEFAULT '',
-            tex        TEXT NOT NULL,
-            image_path TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            title      TEXT NOT NULL,
+            body       TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
         )
         """
     )
@@ -48,39 +39,44 @@ def init_db(path: str = "vault/board2tex.db") -> sqlite3.Connection:
     return con
 
 
-def add_problem(con: sqlite3.Connection, course: str, tags: list[str],
-                tex: str, image_path: str) -> None:
-    """插入一条错题记录。tags 是列表,入库前 join(",")。"""
+def create_note(con: sqlite3.Connection, title: str) -> int:
+    """新建一份空笔记,返回 id。标题为空时用"未命名笔记"。"""
+    title = (title or "").strip() or "未命名笔记"
+    cur = con.execute("INSERT INTO notes (title) VALUES (?)", (title,))
+    con.commit()
+    return int(cur.lastrowid)
+
+
+def list_notes(con: sqlite3.Connection) -> list[tuple]:
+    """返回 [(id, title, updated_at), ...],最近更新的在前。"""
+    return con.execute(
+        "SELECT id, title, updated_at FROM notes ORDER BY updated_at DESC, id DESC"
+    ).fetchall()
+
+
+def get_note(con: sqlite3.Connection, note_id: int) -> tuple[str, str] | None:
+    """返回 (title, body);不存在返回 None。"""
+    row = con.execute(
+        "SELECT title, body FROM notes WHERE id = ?", (note_id,)
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def append_to_note(con: sqlite3.Connection, note_id: int, body: str) -> None:
+    """把一段 LaTeX 正文追加到笔记末尾(分页符隔开),并刷新更新时间。"""
+    row = con.execute("SELECT body FROM notes WHERE id = ?", (note_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"笔记不存在: {note_id}")
+    old = row[0] or ""
+    new = body if not old.strip() else old.rstrip() + SEP + body.lstrip()
     con.execute(
-        "INSERT INTO problems (course, tags, tex, image_path) VALUES (?, ?, ?, ?)",
-        (course, ",".join(tags), tex, image_path),
+        "UPDATE notes SET body = ?, updated_at = datetime('now','localtime') "
+        "WHERE id = ?",
+        (new, note_id),
     )
     con.commit()
 
 
-def list_problems(con: sqlite3.Connection) -> list[tuple]:
-    """返回全部记录,按 id 倒序(最新的在前)。
-
-    列序固定: (id, course, tags, tex, image_path, created_at)。
-    """
-    return con.execute(
-        "SELECT id, course, tags, tex, image_path, created_at "
-        "FROM problems ORDER BY id DESC"
-    ).fetchall()
-
-
-def search(con: sqlite3.Connection, course: str | None = None) -> list[tuple]:
-    """按课程筛选;course 为 None 时等价于 list_problems。"""
-    if course is None:
-        return list_problems(con)
-    return con.execute(
-        "SELECT id, course, tags, tex, image_path, created_at "
-        "FROM problems WHERE course = ? ORDER BY id DESC",
-        (course,),
-    ).fetchall()
-
-
-def delete_problem(con: sqlite3.Connection, pid: int) -> None:
-    """按 id 删除记录。"""
-    con.execute("DELETE FROM problems WHERE id = ?", (pid,))
+def delete_note(con: sqlite3.Connection, note_id: int) -> None:
+    con.execute("DELETE FROM notes WHERE id = ?", (note_id,))
     con.commit()
