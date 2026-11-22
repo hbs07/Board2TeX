@@ -282,6 +282,29 @@ def merge_page(blocks: list[dict], page_sizes: list[int],
     return new_blocks, new_sizes
 
 
+def split_page_at(blocks: list[dict], page_sizes: list[int],
+                  index: int) -> tuple[list[dict], list[int]]:
+    """在第 index 行之前插入分页符(把所在页一分为二)。
+
+    index 已经是某页第一行时是无效操作(前面本来就有分页符)。
+    返回 (blocks, new_sizes);blocks 内容不变,只是页边界变化。
+    """
+    if index <= 0 or index >= len(blocks):
+        return list(blocks), list(page_sizes)
+
+    start = 0
+    for page, size in enumerate(page_sizes):
+        if index < start + size:
+            offset = index - start
+            if offset <= 0:
+                return list(blocks), list(page_sizes)
+            new_sizes = list(page_sizes)
+            new_sizes[page:page + 1] = [offset, size - offset]
+            return list(blocks), new_sizes
+        start += size
+    return list(blocks), list(page_sizes)
+
+
 if __name__ == "__main__":
     import os
     import shutil

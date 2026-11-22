@@ -91,6 +91,8 @@ class MainWindow(QMainWindow):
         self.doc: dict | None = None       # 合并后的 {"blocks", "tex_source"}
         self._page_sizes: list[int] = []   # 每页贡献多少 Block(分页依据)
         self._page_labels: list[str] = []  # 每页的名字(合并页后可能是 "a + b")
+        self._undo_stack: list[tuple] = [] # 合并/分页前的快照
+        self._undo_btn = None
         self.block_edits: dict[int, QLineEdit] = {}   # order -> 编辑框
         self._db = None                    # 笔记库连接(懒加载)
         self._image_pixmaps: list[QPixmap] = []       # 原图,供「查看原图」使用
@@ -135,6 +137,7 @@ class MainWindow(QMainWindow):
             ("追加图片", self.on_add_images, "", "在现有板书后面继续添加,只识别新图片"),
             ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
             ("调整顺序", self.on_reorder_images, "", "调整页顺序(不重新识别)"),
+            ("撤销", self._undo, "", "撤销上一次行合并 / 页合并 / 分页"),
             ("再次识别", self.on_recognize, "primary", "重新识别当前所有图片:已配置 API 用 AI,否则用本地模型"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
@@ -146,6 +149,9 @@ class MainWindow(QMainWindow):
                 btn.setProperty("class", role)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setToolTip(tip)
+            if text == "撤销":
+                self._undo_btn = btn
+                btn.setEnabled(False)
             btn.clicked.connect(slot)
             btn_row.addWidget(btn)
         btn_row.addStretch()
@@ -357,6 +363,15 @@ class MainWindow(QMainWindow):
             merge.clicked.connect(lambda _=False, o=order: self._merge_row(o))
             row_layout.addWidget(merge)
 
+            split = QPushButton("页")
+            split.setObjectName("rowBtn")
+            split.setFixedWidth(26)
+            split.setCursor(Qt.PointingHandCursor)
+            split.setToolTip("在此行前分页")
+            split.setEnabled(order not in self._page_headers)
+            split.clicked.connect(lambda _=False, o=order: self._split_page(o))
+            row_layout.addWidget(split)
+
             self.editor_layout.addWidget(row)
             self.block_edits[order] = edit
 
@@ -384,6 +399,7 @@ class MainWindow(QMainWindow):
 
         from compose.builder import move_block
 
+        self._clear_undo()
         self.doc["blocks"], self._page_sizes = move_block(
             self.doc["blocks"], self._page_sizes, order, delta
         )
@@ -399,12 +415,47 @@ class MainWindow(QMainWindow):
             f"已{'上' if delta < 0 else '下'}移第 {order} 行,预览已更新"
         )
 
+    def _push_undo(self) -> None:
+        """记录一次结构操作(合并/分页)前的状态,供「撤销」恢复。"""
+        if not self.doc:
+            return
+        self._undo_stack.append((
+            [dict(b) for b in self.doc["blocks"]],
+            list(self._page_sizes),
+            list(self._page_labels),
+        ))
+        if len(self._undo_stack) > 20:
+            self._undo_stack.pop(0)
+        self._update_undo_btn()
+
+    def _clear_undo(self) -> None:
+        self._undo_stack.clear()
+        self._update_undo_btn()
+
+    def _update_undo_btn(self) -> None:
+        if self._undo_btn is not None:
+            self._undo_btn.setEnabled(bool(self._undo_stack))
+
+    def _undo(self) -> None:
+        if not self.doc or not self._undo_stack:
+            return
+        blocks, sizes, labels = self._undo_stack.pop()
+        self.doc["blocks"] = blocks
+        self._page_sizes = sizes
+        self._page_labels = labels
+        self._rebuild_tex()
+        self.show_blocks()
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self._update_undo_btn()
+        self.statusBar().showMessage("已撤销上一次合并/分页")
+
     def _merge_row(self, order: int) -> None:
         """把第 order 行并入上一行(可跨页)。"""
         if not self.doc or order <= 0:
             return
         from compose.builder import merge_row
 
+        self._push_undo()
         self.doc["blocks"], self._page_sizes = merge_row(
             self.doc["blocks"], self._page_sizes, order
         )
@@ -426,6 +477,7 @@ class MainWindow(QMainWindow):
             return
         from compose.builder import merge_page
 
+        self._push_undo()
         self.doc["blocks"], self._page_sizes = merge_page(
             self.doc["blocks"], self._page_sizes, page_index
         )
@@ -440,10 +492,38 @@ class MainWindow(QMainWindow):
         self.preview_pane.compile_now(self.doc["tex_source"])
         self.statusBar().showMessage(f"已把第 {page_index + 1} 页并入上一页")
 
+    def _split_page(self, order: int) -> None:
+        """在第 order 行之前插入分页符。"""
+        if not self.doc:
+            return
+        from compose.builder import split_page_at
+
+        start, page, offset = 0, None, 0
+        for p, size in enumerate(self._page_sizes):
+            if order < start + size:
+                page, offset = p, order - start
+                break
+            start += size
+        if page is None or offset <= 0:
+            return
+
+        self._push_undo()
+        self.doc["blocks"], self._page_sizes = split_page_at(
+            self.doc["blocks"], self._page_sizes, order
+        )
+        if page < len(self._page_labels):
+            base = self._page_labels[page]
+            self._page_labels[page:page + 1] = [f"{base} · 上", f"{base} · 下"]
+        self._rebuild_tex()
+        self.show_blocks()
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self.statusBar().showMessage(f"已在第 {order} 行前分页")
+
     def _on_block_edited(self, order: int, text: str):
         """编辑框一改: 写回 block,重建 tex,并触发实时预览(防抖)。"""
         if not self.doc:
             return
+        self._clear_undo()             # 文本改动后,旧的合并快照不再安全
         for b in self.doc["blocks"]:
             if b["order"] == order:
                 b["latex"] = text
@@ -512,6 +592,7 @@ class MainWindow(QMainWindow):
         self.doc = None
         self._page_sizes = []
         self._page_labels = []
+        self._clear_undo()
         self.show_blocks()
         self.preview_pane.clear()
         self.right_title.setText("识别结果 · 可直接编辑")
@@ -589,6 +670,7 @@ class MainWindow(QMainWindow):
             )
             self._page_labels.extend(os.path.basename(p) for p in new_paths)
 
+        self._clear_undo()
         self._rebuild_tex()
         self.show_blocks()
         self._update_result_title()
@@ -624,6 +706,7 @@ class MainWindow(QMainWindow):
 
         from compose.builder import reorder_pages
 
+        self._clear_undo()
         self.doc["blocks"], self._page_sizes = reorder_pages(
             self.doc["blocks"], self._page_sizes, order
         )
@@ -671,6 +754,7 @@ class MainWindow(QMainWindow):
         self.doc, self._page_sizes = merge_documents(docs)
         self._page_labels = [os.path.basename(p) for p in self.image_paths]
 
+        self._clear_undo()
         self.show_blocks()
         self._update_result_title()
         self.statusBar().showMessage(
@@ -737,6 +821,7 @@ class MainWindow(QMainWindow):
         self.doc, self._page_sizes = merge_documents(docs)
         self._page_labels = [os.path.basename(p) for p in self.image_paths]
         self.regions = []
+        self._clear_undo()
         self.show_blocks()
         self._update_result_title()
         self.statusBar().showMessage(

@@ -292,6 +292,26 @@ def test_merge_page_removes_break() -> None:
     assert [b["order"] for b in merged] == [0, 1, 2]
 
 
+def test_split_page_at_arbitrary_row() -> None:
+    """任意行前分页: 页大小在该行处一分为二;页首分页是无效操作。"""
+    from compose.builder import split_page_at
+
+    blocks = [
+        {"order": i, "type": "text", "content": f"t{i}",
+         "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+        for i in range(4)
+    ]
+
+    _blocks, sizes = split_page_at(blocks, [4], 2)
+    assert sizes == [2, 2]
+
+    _blocks, sizes = split_page_at(blocks, [2, 2], 3)
+    assert sizes == [2, 1, 1]
+
+    _blocks, sizes = split_page_at(blocks, [4], 0)
+    assert sizes == [4], "页首分页没有意义"
+
+
 # ---------------------------------------------------------------- 识别(C)
 
 
