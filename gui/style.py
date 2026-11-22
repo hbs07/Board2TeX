@@ -185,7 +185,12 @@ QLabel#pageHeader {{
     color: #475569;
     font-size: 11px;
     font-weight: 600;
-    padding: 8px 2px 2px 2px;
+    padding: 2px;
+}}
+QPushButton#pageMergeBtn {{
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 6px;
 }}
 QLineEdit#blockEdit {{
     background: #FFFFFF;

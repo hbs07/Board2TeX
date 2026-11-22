@@ -197,6 +197,91 @@ def move_block(blocks: list[dict], page_sizes: list[int],
     return new_blocks, new_sizes
 
 
+def merge_block_contents(a: dict, b: dict) -> dict:
+    """把相邻两行的内容合成一行。
+
+    - 同类型: 直接空格连接(公式仍在数学模式里);
+    - 混排: 统一成 text,公式用行内 $...$ 包起来。
+    置信度取两者较小值(合并后更需要人工确认)。
+    """
+    def _text(value) -> str:
+        return (value or "").strip()
+
+    if a["type"] == b["type"]:
+        kind = a["type"]
+        latex = (_text(a["latex"]) + " " + _text(b["latex"])).strip()
+    else:
+        kind = "text"
+        left = (f"${_text(a['latex'])}$" if a["type"] == "formula"
+                else _text(a["latex"]))
+        right = (f"${_text(b['latex'])}$" if b["type"] == "formula"
+                 else _text(b["latex"]))
+        latex = (left + " " + right).strip()
+
+    merged = dict(a)
+    merged.update({
+        "type": kind,
+        "latex": latex,
+        "content": (_text(a["content"]) + " " + _text(b["content"])).strip(),
+        "confidence": min(float(a["confidence"]), float(b["confidence"])),
+    })
+    return merged
+
+
+def _page_of(page_sizes: list[int], pos: int) -> int:
+    acc = 0
+    for page, size in enumerate(page_sizes):
+        acc += size
+        if pos < acc:
+            return page
+    return len(page_sizes) - 1
+
+
+def merge_row(blocks: list[dict], page_sizes: list[int],
+              index: int) -> tuple[list[dict], list[int]]:
+    """把第 index 行并入上一行(index-1),可跨页。
+
+    跨页时: 目标页行数不变(合并行替换上一行),原页 -1。
+    """
+    if index <= 0 or index >= len(blocks):
+        return list(blocks), list(page_sizes)
+
+    src_page = _page_of(page_sizes, index)
+
+    new_blocks = list(blocks)
+    new_blocks[index - 1] = merge_block_contents(blocks[index - 1], blocks[index])
+    del new_blocks[index]
+    new_blocks = [dict(b, order=i) for i, b in enumerate(new_blocks)]
+
+    new_sizes = list(page_sizes)
+    new_sizes[src_page] -= 1       # 合并行只在源页少一行;目标页行数不变
+    return new_blocks, new_sizes
+
+
+def merge_page(blocks: list[dict], page_sizes: list[int],
+               index: int) -> tuple[list[dict], list[int]]:
+    """把第 index 页并入上一页(去掉两页之间的 \\newpage)。"""
+    if index <= 0 or index >= len(page_sizes):
+        return list(blocks), list(page_sizes)
+
+    slices: list[list[dict]] = []
+    start = 0
+    for size in page_sizes:
+        slices.append(blocks[start:start + size])
+        start += size
+
+    slices[index - 1] = slices[index - 1] + slices[index]
+    del slices[index]
+
+    new_blocks: list[dict] = []
+    new_sizes: list[int] = []
+    for part in slices:
+        offset = len(new_blocks)
+        new_blocks.extend(dict(b, order=offset + i) for i, b in enumerate(part))
+        new_sizes.append(len(part))
+    return new_blocks, new_sizes
+
+
 if __name__ == "__main__":
     import os
     import shutil

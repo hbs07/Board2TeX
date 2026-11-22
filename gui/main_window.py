@@ -89,7 +89,8 @@ class MainWindow(QMainWindow):
         self.pre: dict | None = None       # 第一张的 {"binary", "bgr"}
         self.regions: list[dict] = []      # 所有图的 layout 输出(合并)
         self.doc: dict | None = None       # 合并后的 {"blocks", "tex_source"}
-        self._page_sizes: list[int] = []   # 每张图贡献多少 Block(分页依据)
+        self._page_sizes: list[int] = []   # 每页贡献多少 Block(分页依据)
+        self._page_labels: list[str] = []  # 每页的名字(合并页后可能是 "a + b")
         self.block_edits: dict[int, QLineEdit] = {}   # order -> 编辑框
         self._db = None                    # 笔记库连接(懒加载)
         self._image_pixmaps: list[QPixmap] = []       # 原图,供「查看原图」使用
@@ -133,7 +134,7 @@ class MainWindow(QMainWindow):
             ("导入图片", self.on_import, "", "重新导入(替换当前所有图片与结果)"),
             ("追加图片", self.on_add_images, "", "在现有板书后面继续添加,只识别新图片"),
             ("查看原图", self.on_view_image, "", "对照原始板书照片(可缩放/翻页)"),
-            ("调整顺序", self.on_reorder_images, "", "调整多张板书的合并顺序"),
+            ("调整顺序", self.on_reorder_images, "", "调整页顺序(不重新识别)"),
             ("再次识别", self.on_recognize, "primary", "重新识别当前所有图片:已配置 API 用 AI,否则用本地模型"),
             ("导出 .tex", self.on_export_tex, "", "导出 LaTeX 源文件"),
             ("导出 PDF", self.on_export_pdf, "accent", "导出 .tex 并用 xelatex 编译成 PDF"),
@@ -255,12 +256,27 @@ class MainWindow(QMainWindow):
             if b["order"] in self._page_headers:
                 page_idx = self._page_headers[b["order"]]
                 name = (
-                    os.path.basename(self.image_paths[page_idx])
-                    if page_idx < len(self.image_paths) else ""
+                    self._page_labels[page_idx]
+                    if page_idx < len(self._page_labels) else ""
                 )
-                header = QLabel(f"第 {page_idx + 1} 张 · {name}")
+                header_row = QWidget()
+                hlay = QHBoxLayout(header_row)
+                hlay.setContentsMargins(2, 8, 2, 2)
+                hlay.setSpacing(8)
+                header = QLabel(f"第 {page_idx + 1} 页 · {name}")
                 header.setObjectName("pageHeader")
-                self.editor_layout.addWidget(header)
+                hlay.addWidget(header)
+                hlay.addStretch()
+                if page_idx > 0:
+                    merge_btn = QPushButton("并入上一页")
+                    merge_btn.setObjectName("pageMergeBtn")
+                    merge_btn.setCursor(Qt.PointingHandCursor)
+                    merge_btn.setToolTip("把这一页接到上一页末尾(去掉分页符)")
+                    merge_btn.clicked.connect(
+                        lambda _=False, p=page_idx: self._merge_page(p)
+                    )
+                    hlay.addWidget(merge_btn)
+                self.editor_layout.addWidget(header_row)
 
             order = b["order"]
             conf = float(b["confidence"])
@@ -332,6 +348,15 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(up)
             row_layout.addWidget(down)
 
+            merge = QPushButton("合")
+            merge.setObjectName("rowBtn")
+            merge.setFixedWidth(26)
+            merge.setCursor(Qt.PointingHandCursor)
+            merge.setToolTip("与上一行合并")
+            merge.setEnabled(order > 0)
+            merge.clicked.connect(lambda _=False, o=order: self._merge_row(o))
+            row_layout.addWidget(merge)
+
             self.editor_layout.addWidget(row)
             self.block_edits[order] = edit
 
@@ -373,6 +398,47 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"已{'上' if delta < 0 else '下'}移第 {order} 行,预览已更新"
         )
+
+    def _merge_row(self, order: int) -> None:
+        """把第 order 行并入上一行(可跨页)。"""
+        if not self.doc or order <= 0:
+            return
+        from compose.builder import merge_row
+
+        self.doc["blocks"], self._page_sizes = merge_row(
+            self.doc["blocks"], self._page_sizes, order
+        )
+        # 跨页合并可能把源页并空: 去掉空页,标签同步
+        for i, size in enumerate(list(self._page_sizes)):
+            if size == 0:
+                del self._page_sizes[i]
+                if i < len(self._page_labels):
+                    del self._page_labels[i]
+                break
+        self._rebuild_tex()
+        self.show_blocks()
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self.statusBar().showMessage(f"已把第 {order} 行并入上一行")
+
+    def _merge_page(self, page_index: int) -> None:
+        """把第 page_index 页并入上一页(去掉 \newpage)。"""
+        if not self.doc or page_index <= 0:
+            return
+        from compose.builder import merge_page
+
+        self.doc["blocks"], self._page_sizes = merge_page(
+            self.doc["blocks"], self._page_sizes, page_index
+        )
+        if page_index < len(self._page_labels):
+            self._page_labels[page_index - 1] = (
+                f"{self._page_labels[page_index - 1]} + "
+                f"{self._page_labels[page_index]}"
+            )
+            del self._page_labels[page_index]
+        self._rebuild_tex()
+        self.show_blocks()
+        self.preview_pane.compile_now(self.doc["tex_source"])
+        self.statusBar().showMessage(f"已把第 {page_index + 1} 页并入上一页")
 
     def _on_block_edited(self, order: int, text: str):
         """编辑框一改: 写回 block,重建 tex,并触发实时预览(防抖)。"""
@@ -445,6 +511,7 @@ class MainWindow(QMainWindow):
         self.regions = []
         self.doc = None
         self._page_sizes = []
+        self._page_labels = []
         self.show_blocks()
         self.preview_pane.clear()
         self.right_title.setText("识别结果 · 可直接编辑")
@@ -488,6 +555,7 @@ class MainWindow(QMainWindow):
             self._load_pixmaps(new_paths)
             self.doc = None
             self._page_sizes = []
+            self._page_labels = []
             self.show_blocks()
             self.preview_pane.clear()
             from recog import vlm
@@ -512,12 +580,14 @@ class MainWindow(QMainWindow):
             from compose.builder import merge_documents
 
             self.doc, self._page_sizes = merge_documents(docs)
+            self._page_labels = [os.path.basename(p) for p in new_paths]
         else:
             from compose.builder import append_documents
 
             self.doc["blocks"], self._page_sizes = append_documents(
                 self.doc["blocks"], self._page_sizes, docs
             )
+            self._page_labels.extend(os.path.basename(p) for p in new_paths)
 
         self._rebuild_tex()
         self.show_blocks()
@@ -528,17 +598,16 @@ class MainWindow(QMainWindow):
         )
 
     def on_reorder_images(self):
-        if len(self.image_paths) < 2:
-            QMessageBox.information(self, "提示", "至少导入两张图片才能调整顺序")
+        if len(self._page_sizes) < 2:
+            QMessageBox.information(self, "提示", "至少有两页才能调整顺序")
             return
 
         from gui.order_dialog import OrderDialog
 
-        dialog = OrderDialog(
-            self,
-            [os.path.basename(p) for p in self.image_paths],
-            self._image_pixmaps,
-        )
+        titles = self._page_labels or [
+            f"第 {i + 1} 页" for i in range(len(self._page_sizes))
+        ]
+        dialog = OrderDialog(self, titles, None)
         if dialog.exec_() != QDialog.Accepted:
             return
 
@@ -546,12 +615,10 @@ class MainWindow(QMainWindow):
         if order == list(range(len(order))):
             return
         self._apply_page_order(order)
-        self.statusBar().showMessage("已调整板书顺序,预览已更新")
+        self.statusBar().showMessage("已调整页顺序,预览已更新")
 
     def _apply_page_order(self, order: list[int]) -> None:
-        """按新顺序重排图片与 Blocks(不重新识别)。"""
-        self.image_paths = [self.image_paths[i] for i in order]
-        self._image_pixmaps = [self._image_pixmaps[i] for i in order]
+        """按新顺序重排页(不重新识别)。"""
         if not self.doc:
             return
 
@@ -560,6 +627,8 @@ class MainWindow(QMainWindow):
         self.doc["blocks"], self._page_sizes = reorder_pages(
             self.doc["blocks"], self._page_sizes, order
         )
+        if len(self._page_labels) == len(order):
+            self._page_labels = [self._page_labels[i] for i in order]
         self._rebuild_tex()
         self.show_blocks()
         self.preview_pane.compile_now(self.doc["tex_source"])
@@ -600,6 +669,7 @@ class MainWindow(QMainWindow):
         self.pre = pres[0] if pres else None
         self.regions = regions_all
         self.doc, self._page_sizes = merge_documents(docs)
+        self._page_labels = [os.path.basename(p) for p in self.image_paths]
 
         self.show_blocks()
         self._update_result_title()
@@ -665,6 +735,7 @@ class MainWindow(QMainWindow):
         from compose.builder import merge_documents
 
         self.doc, self._page_sizes = merge_documents(docs)
+        self._page_labels = [os.path.basename(p) for p in self.image_paths]
         self.regions = []
         self.show_blocks()
         self._update_result_title()

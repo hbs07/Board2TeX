@@ -241,6 +241,57 @@ def test_move_block_within_and_across_pages() -> None:
     assert sizes == [2, 1]
 
 
+def test_merge_row_same_page_and_cross_page() -> None:
+    """两行合并: 同页页大小 -1;跨页只让源页 -1。"""
+    from compose.builder import merge_row
+
+    def make():
+        return [
+            {"order": i, "type": "text", "content": f"t{i}",
+             "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+            for i in range(3)                 # 页1: t0,t1;页2: t2
+        ]
+
+    merged, sizes = merge_row(make(), [2, 1], 1)      # t1 并入 t0
+    assert sizes == [1, 1]
+    assert [b["latex"] for b in merged] == ["t0 t1", "t2"]
+    assert [b["order"] for b in merged] == [0, 1]
+
+    merged, sizes = merge_row(make(), [2, 1], 2)      # t2 跨页并入 t1
+    assert sizes == [2, 0], "跨页合并后,源页被清空"
+    assert [b["latex"] for b in merged] == ["t0", "t1 t2"]
+
+
+def test_merge_row_mixed_types_becomes_text() -> None:
+    """文字 + 公式合并: 统一成 text,公式用行内 $...$ 包起来。"""
+    from compose.builder import merge_row
+
+    blocks = [
+        {"order": 0, "type": "formula", "content": "x", "latex": "x",
+         "confidence": 0.8, "bbox": (0, 0, 1, 1)},
+        {"order": 1, "type": "text", "content": "is one", "latex": "is one",
+         "confidence": 0.9, "bbox": (0, 0, 1, 1)},
+    ]
+    merged, _sizes = merge_row(blocks, [2], 1)
+    assert merged[0]["type"] == "text"
+    assert merged[0]["latex"] == "$x$ is one"
+
+
+def test_merge_page_removes_break() -> None:
+    """两页合并: 页大小相加,只剩一页。"""
+    from compose.builder import merge_page
+
+    blocks = [
+        {"order": i, "type": "text", "content": f"t{i}",
+         "latex": f"t{i}", "confidence": 0.9, "bbox": (0, 0, 1, 1)}
+        for i in range(3)
+    ]
+    merged, sizes = merge_page(blocks, [2, 1], 1)
+    assert sizes == [3]
+    assert [b["content"] for b in merged] == ["t0", "t1", "t2"]
+    assert [b["order"] for b in merged] == [0, 1, 2]
+
+
 # ---------------------------------------------------------------- 识别(C)
 
 
